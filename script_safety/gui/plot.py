@@ -72,6 +72,7 @@ class ScriptPlot(pg.GraphicsLayoutWidget):
         self.main.setLimits(yMin=-10, yMax=110, xMin=-5)
         self.main.setMouseEnabled(x=True, y=False)
         self.main.showGrid(x=True, y=True, alpha=0.15)
+        self.main.hideButtons()   # the small "A" auto-range button only confuses first-time users
         self.main.addLegend(offset=(10, 5))
         self.overspeed = self.main.plot([], [], pen=OVERSPEED_PEN, connect="pairs", name="too fast (original)")
         self.original = self.main.plot([], [], pen=ORIGINAL_PEN, name="original")
