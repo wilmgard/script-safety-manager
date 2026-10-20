@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import math
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -56,16 +57,24 @@ def speed(a: Action, b: Action) -> float:
 
 def load(path: str | Path) -> Funscript:
     path = Path(path)
-    with open(path, encoding="utf-8-sig") as f:
-        data = json.load(f)
+    try:
+        with open(path, encoding="utf-8-sig") as f:
+            data = json.load(f)
+    except RecursionError as e:
+        raise ValueError(f"{path.name}: JSON is nested too deeply") from e
+    except UnicodeDecodeError as e:
+        raise ValueError(f"{path.name}: not a UTF-8 text file") from e
     if not isinstance(data, dict) or not isinstance(data.get("actions"), list):
         raise ValueError(f"{path.name}: not a funscript (missing 'actions' list)")
     actions = []
     for i, a in enumerate(data["actions"]):
         try:
-            actions.append(Action(int(a["at"]), float(a["pos"])))
+            at, pos = float(a["at"]), float(a["pos"])
         except (KeyError, TypeError, ValueError) as e:
-            raise ValueError(f"{path.name}: bad action #{i}: {a!r}") from e
+            raise ValueError(f"{path.name}: bad action #{i}: {str(a)[:80]}") from e
+        if not (math.isfinite(at) and math.isfinite(pos)) or at < 0:
+            raise ValueError(f"{path.name}: action #{i} has an invalid time or position: {str(a)[:80]}")
+        actions.append(Action(int(at), pos))
     raw = {k: v for k, v in data.items() if k != "actions"}
     return Funscript(actions, raw, path)
 
@@ -75,6 +84,7 @@ def save(script: Funscript, path: str | Path) -> None:
     data.setdefault("version", "1.0")
     data.setdefault("inverted", False)
     data.setdefault("range", 100)
-    data["actions"] = [{"at": int(a.at), "pos": int(round(a.pos))} for a in script.actions]
+    # Final guarantee: whatever happened upstream, never write a position outside 0-100.
+    data["actions"] = [{"at": int(a.at), "pos": min(100, max(0, int(round(a.pos))))} for a in script.actions]
     with open(path, "w", encoding="utf-8") as f:
         json.dump(data, f, separators=(",", ":"))

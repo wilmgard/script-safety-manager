@@ -14,16 +14,18 @@ from pathlib import Path
 from . import __version__, model
 from .analysis import analyze
 from .pipeline import FixOptions, apply
-from .profiles import all_profiles, get_profile
+from .profiles import SPEED_LIMIT_MODES, all_profiles, get_profile
 
 SAFE_SUFFIX = ".safe"
+MODIFIED_SUFFIX = ".modified"   # used when the speed limit was switched off
 
 
-def _collect(paths: list[str]) -> list[Path]:
+def _collect(paths: list[str], skip_outputs: bool = True) -> list[Path]:
     files: list[Path] = []
     for p in map(Path, paths):
         if p.is_dir():
-            files.extend(sorted(f for f in p.rglob("*.funscript") if SAFE_SUFFIX + "." not in f.name))
+            files.extend(sorted(f for f in p.rglob("*.funscript")
+                                 if not skip_outputs or SAFE_SUFFIX + "." not in f.name and MODIFIED_SUFFIX + "." not in f.name))
         elif p.is_file():
             files.append(p)
         else:
@@ -31,14 +33,14 @@ def _collect(paths: list[str]) -> list[Path]:
     return files
 
 
-def _output_path(src: Path, out_dir: Path | None) -> Path:
+def _output_path(src: Path, out_dir: Path | None, suffix: str = SAFE_SUFFIX) -> Path:
     """video.funscript -> video.safe.funscript; video.roll.funscript -> video.safe.roll.funscript,
     so multi-axis players still pick up the axis suffix."""
     parts = src.name.split(".")
     if len(parts) >= 3 and parts[-2] in model.AXIS_SUFFIXES:
-        name = ".".join(parts[:-2]) + SAFE_SUFFIX + "." + ".".join(parts[-2:])
+        name = ".".join(parts[:-2]) + suffix + "." + ".".join(parts[-2:])
     else:
-        name = src.stem + SAFE_SUFFIX + src.suffix
+        name = src.stem + suffix + src.suffix
     return (out_dir or src.parent) / name
 
 
@@ -75,7 +77,7 @@ def cmd_profiles(args) -> int:
 def cmd_analyze(args) -> int:
     profile = get_profile(args.profile)
     reports = []
-    for path in _collect(args.paths):
+    for path in _collect(args.paths, skip_outputs=False):
         rep = analyze(model.load(path), profile)
         if args.json:
             reports.append({"file": str(path), **rep.to_dict()})
@@ -98,14 +100,16 @@ def cmd_fix(args) -> int:
         soft_start=not args.no_soft_start, ramp_ms=args.ramp_ms,
         intensity_cap=args.intensity_cap,
         speed_limit=not args.no_speed_limit, max_speed=args.max_speed, speed_mode=args.speed_mode,
+        anchor=args.anchor, slow_fix=not args.no_slow_fix, slow_mode=args.slow_mode,
     )
+    opts.validate()
     out_dir = Path(args.out_dir) if args.out_dir else None
     if out_dir:
         out_dir.mkdir(parents=True, exist_ok=True)
     for path in _collect(args.paths):
         script = model.load(path)
         result = apply(script, profile, opts)
-        dest = _output_path(path, out_dir)
+        dest = _output_path(path, out_dir, SAFE_SUFFIX if opts.is_safe else MODIFIED_SUFFIX)
         if dest.resolve() == path.resolve():
             print(f"refusing to overwrite source {path}", file=sys.stderr)
             return 2
@@ -117,7 +121,10 @@ def cmd_fix(args) -> int:
         if not args.dry_run:
             model.save(result.script, dest)
         print(f"{path.name} -> {dest.name}{' (dry run)' if args.dry_run else ''}: "
-              f"score {before} -> {after}, {result.moved} moved, {result.removed} removed")
+              f"score {before} -> {after}, {result.moved} moved, {result.removed} removed, {result.added} added")
+        if result.new_turns:
+            print(f"   note: stroke now turns at {len(result.new_turns)} point(s) the script did not "
+                  f"(first at {_ts(result.new_turns[0])})")
         for name, summary in result.steps:
             print(f"   {name:13} {summary}")
     return 0
@@ -139,13 +146,17 @@ def build_parser() -> argparse.ArgumentParser:
     a.add_argument("--json", action="store_true", help="machine-readable output")
     a.set_defaults(func=cmd_analyze)
 
-    f = sub.add_parser("fix", help="write a safe copy (NAME.safe.funscript)")
+    f = sub.add_parser("fix", help="write a fixed copy (NAME.safe.funscript, or NAME.modified.funscript without the speed limit)")
     common(f)
     f.add_argument("-o", "--out-dir", help="output folder (default: next to the source)")
     f.add_argument("--force", action="store_true", help="overwrite existing .safe files")
     f.add_argument("--dry-run", action="store_true", help="show what would change without writing")
     f.add_argument("--max-speed", type=float, help="override the profile's speed limit (u/s)")
-    f.add_argument("--speed-mode", choices=["shorten_start", "shorten_center"])
+    f.add_argument("--speed-mode", choices=list(SPEED_LIMIT_MODES), help="override the profile's limiter")
+    f.add_argument("--anchor", choices=["bottom", "top"], default="bottom",
+                   help="points preserve_anchor keeps on time and at full depth")
+    f.add_argument("--no-slow-fix", action="store_true", help="leave strokes under the profile's min_speed alone")
+    f.add_argument("--slow-mode", choices=["hold_then_move", "move_then_hold"], default="hold_then_move")
     f.add_argument("--no-speed-limit", action="store_true")
     f.add_argument("--no-min-interval", action="store_true")
     f.add_argument("--vibration", choices=["keep", "reduce", "remove"], default="keep")
@@ -166,6 +177,6 @@ def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     try:
         return args.func(args)
-    except (FileNotFoundError, KeyError, ValueError) as e:
+    except (OSError, KeyError, ValueError) as e:
         print(f"error: {e}", file=sys.stderr)
         return 1

@@ -11,6 +11,8 @@ import json
 from dataclasses import asdict, dataclass, fields
 from pathlib import Path
 
+SPEED_LIMIT_MODES = ("preserve_anchor", "shorten_start", "shorten_center")
+
 
 @dataclass
 class DeviceProfile:
@@ -20,11 +22,36 @@ class DeviceProfile:
     min_interval_ms: int = 30           # closer actions are skipped/aborted by the device
     vibration_ok: bool = True           # handles bursts of tiny, fast actions well
     thin_interpolation: bool = False    # in-between points cause micro-stutter
-    speed_limit_mode: str = "shorten_start"   # shorten_start | shorten_center
+    speed_limit_mode: str = "shorten_start"   # one of SPEED_LIMIT_MODES
     sustained_speed: float = 300.0      # average u/s over the rolling window considered "heavy"
     sustained_window_ms: int = 30000
+    min_speed: float = 0.0              # strokes slower than this get re-timed by the device (0 = never)
+    firmware_limiter: bool = False      # device rewrites over-fast moves itself (shortening toward the start)
+    thin_spacing_ms: int = 0            # keep simplified curve points at least this far apart (0 = no constraint)
     verified: bool = False
     notes: str = ""
+
+    def __post_init__(self):
+        def num(name, lo, hi):
+            v = getattr(self, name)
+            if isinstance(v, bool) or not isinstance(v, (int, float)) or not (lo <= v <= hi):
+                raise ValueError(f"profile '{self.key}': {name} must be a number between {lo} and {hi}, got {v!r}")
+        num("max_speed", 1, 2000)
+        num("min_interval_ms", 0, 1000)
+        num("sustained_speed", 1, 2000)
+        num("sustained_window_ms", 1000, 600000)
+        num("min_speed", 0, 200)
+        num("thin_spacing_ms", 0, 2000)
+        if self.min_speed >= self.max_speed:
+            raise ValueError(f"profile '{self.key}': min_speed must be below max_speed")
+        if self.speed_limit_mode not in SPEED_LIMIT_MODES:
+            raise ValueError(f"profile '{self.key}': speed_limit_mode must be one of {', '.join(SPEED_LIMIT_MODES)}")
+        for name in ("vibration_ok", "thin_interpolation", "firmware_limiter", "verified"):
+            if not isinstance(getattr(self, name), bool):
+                raise ValueError(f"profile '{self.key}': {name} must be true or false")
+        for name in ("key", "name", "notes"):
+            if not isinstance(getattr(self, name), str):
+                raise ValueError(f"profile: {name} must be text")
 
     @classmethod
     def from_dict(cls, d: dict) -> "DeviceProfile":
@@ -42,15 +69,16 @@ BUILTIN: dict[str, DeviceProfile] = {p.key: p for p in [
     DeviceProfile(
         "handy_online", "The Handy (online/WiFi)",
         max_speed=500, min_interval_ms=20, vibration_ok=True, thin_interpolation=False,
-        speed_limit_mode="shorten_start", verified=True,
-        notes="Speed limit ~500 u/s observed; device itself shortens strokes toward their start. "
+        speed_limit_mode="preserve_anchor", min_speed=33, firmware_limiter=True, verified=True,
+        notes="Observed: firmware shortens strokes over ~500 u/s toward their start (moving beat-synced "
+              "bottoms) and re-times strokes under ~33 u/s. We pre-limit so the firmware never has to. "
               "Vibrations play well. min_interval is a placeholder."),
     DeviceProfile(
         "handy_ble", "The Handy (Bluetooth)",
         max_speed=550, min_interval_ms=60, vibration_ok=False, thin_interpolation=True,
-        speed_limit_mode="shorten_start",
-        notes="Observed: skips actions at high frequency, micro-stutters on interpolation points, "
-              "moves faster than online mode. Numbers are placeholders."),
+        speed_limit_mode="preserve_anchor", thin_spacing_ms=120,
+        notes="Observed: skips actions at high frequency, micro-stutters after every point (so curves are "
+              "simplified to fewer, spaced points), moves faster than online mode. Numbers are placeholders."),
     DeviceProfile(
         "osr", "OSR2 / SR6",
         max_speed=450, min_interval_ms=20, vibration_ok=False, thin_interpolation=False,
@@ -88,7 +116,12 @@ def load_profile_file(path: str | Path) -> DeviceProfile:
     """Load a profile JSON. Fields not given fall back to the profile named in 'base' (default: generic)."""
     with open(path, encoding="utf-8") as f:
         d = json.load(f)
-    base = BUILTIN.get(d.pop("base", "generic"), BUILTIN["generic"]).to_dict()
+    if not isinstance(d, dict):
+        raise ValueError(f"{Path(path).name}: profile must be a JSON object")
+    base_key = d.pop("base", "generic")
+    if base_key not in BUILTIN:
+        raise ValueError(f"{Path(path).name}: unknown base profile {base_key!r}")
+    base = BUILTIN[base_key].to_dict()
     base.update(d)
     base["key"] = d.get("key", Path(path).stem)
     base["name"] = d.get("name", base["key"])

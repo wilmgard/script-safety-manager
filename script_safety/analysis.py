@@ -74,6 +74,58 @@ def find_bursts(actions: list[Action], interval_ms: int = BURST_INTERVAL_MS,
     return runs
 
 
+def turning_points(actions: list[Action]) -> list[int]:
+    """Indices (excluding first and last) where the stroke reverses direction. Flat stretches are
+    skipped over, so a hold inside a one-way run is not a turn; a flat top/bottom turns at its first point."""
+    out = []
+    last_dir = 0
+    flat_start = None
+    for k in range(1, len(actions)):
+        d = actions[k].pos - actions[k - 1].pos
+        if d == 0:
+            if flat_start is None:
+                flat_start = k - 1
+            continue
+        direction = 1 if d > 0 else -1
+        if last_dir and direction != last_dir:
+            out.append(flat_start if flat_start is not None else k - 1)
+        flat_start = None
+        last_dir = direction
+    return out
+
+
+def emphasis_changes(before: list[Action], after: list[Action]) -> tuple[list[int], list[int]]:
+    """Compare stroke structure. Returns (new_turns, lost_turns) as timestamps:
+    new_turns  - points that were in-between points but became a top/bottom (the stroke now turns
+                 somewhere the scripter did not put a turn, e.g. off the beat);
+    lost_turns - tops/bottoms that are no longer turns (flattened or removed)."""
+    t_before = {before[k].at for k in turning_points(before)}
+    t_after = {after[k].at for k in turning_points(after)}
+    present = {a.at for a in after}
+    first_last = {after[0].at, after[-1].at} if after else set()
+    new = sorted(t for t in t_after - t_before if t not in first_last)
+    lost = sorted(t for t in t_before - t_after if t in present and t not in first_last)
+    return new, lost
+
+
+def _cluster(times: list[int], gap_ms: int = 2000) -> list[list[int]]:
+    groups: list[list[int]] = []
+    for t in times:
+        if groups and t - groups[-1][-1] <= gap_ms:
+            groups[-1].append(t)
+        else:
+            groups.append([t])
+    return groups
+
+
+def emphasis_findings(before: list[Action], after: list[Action], who: str) -> list[Finding]:
+    new, _lost = emphasis_changes(before, after)
+    return [Finding("emphasis_lost", "warning", g[0], g[-1],
+                    f"{who} turns the stroke at {len(g)} in-between point(s): strokes no longer turn where "
+                    f"the script does (off the beat)", len(g))
+            for g in _cluster(new)]
+
+
 def find_resumes(actions: list[Action], pause_ms: int = PAUSE_MS) -> list[int]:
     """Indices of the action where motion restarts after a hold of at least pause_ms."""
     resumes = []
@@ -160,6 +212,21 @@ def analyze(script: Funscript, profile: DeviceProfile) -> Report:
                     f"{j - i + 1} move(s) above {profile.max_speed:.0f} u/s (peak {peak_txt})",
                     None if peak == float("inf") else round(peak, 1)))
 
+    # Devices whose firmware limits speed itself: predict what it will do to the stroke structure
+    if profile.firmware_limiter and any(s > profile.max_speed for s in speeds):
+        from .fixers import sanitize, speed_limit
+        clean = sanitize(acts)[0]
+        emulated = speed_limit(clean, profile.max_speed, "shorten_start")[0]
+        findings.extend(emphasis_findings(clean, emulated, f"{profile.name} firmware"))
+
+    # Strokes slow enough that the firmware re-times them
+    if profile.min_speed > 0:
+        slow = [abs(b.pos - a.pos) >= 3 and b.at > a.at and s < profile.min_speed for (a, b), s in zip(pairs, speeds)]
+        for i, j in _ranges(slow):
+            add(Finding("slow_retime", "warning", acts[i].at, acts[j + 1].at,
+                        f"{j - i + 1} stroke(s) under {profile.min_speed:.0f} u/s: device firmware may shift "
+                        f"their timing", round(min(speeds[i:j + 1]), 1)))
+
     # Actions closer together than the device can follow
     for i, j in _ranges([0 < b.at - a.at < profile.min_interval_ms for a, b in pairs]):
         shortest = min(acts[k + 1].at - acts[k].at for k in range(i, j + 1))
@@ -169,8 +236,9 @@ def analyze(script: Funscript, profile: DeviceProfile) -> Report:
     # Vibration bursts
     for i, j in find_bursts(acts):
         rate = (j - i) / max(1, acts[j].at - acts[i].at) * 1000
-        sev = "info" if profile.vibration_ok else "warning"
-        add(Finding("vibration", sev, acts[i].at, acts[j].at,
+        # A fidelity note rather than a hazard: devices that can't follow simply skip or dampen these,
+        # and actions too close to follow are already reported as short_interval.
+        add(Finding("vibration", "info", acts[i].at, acts[j].at,
                     f"vibration burst: {j - i + 1} actions at {rate:.0f}/s"
                     + ("" if profile.vibration_ok else " (device may skip or dampen these)"), round(rate, 1)))
 
