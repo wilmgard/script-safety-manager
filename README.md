@@ -4,7 +4,7 @@ A local, offline desktop app that checks a `.funscript` **before you play it**, 
 
 ![Script Safety Manager with the stress-test script loaded for an OSR2 / SR6](docs/images/02_osr_overview.png)
 
-> Status: working and tested on Windows. Device limits are still mostly estimates (see [What's next](#whats-next)).
+> Status: working and tested on Windows. **Scope: single-axis (stroke) scripts only.** Multi-axis support is out of scope for now, but pull requests are welcome.
 
 ## Why this exists
 
@@ -12,7 +12,7 @@ More and more scripts are being released by new authors without being tested on 
 
 **The Handy protects you by itself.** Its firmware caps speed (around 500 units/s in online mode) and rewrites anything faster before playing it. That behaviour has been tested thoroughly by forum members. For the Handy this app is mostly about *playing the script as intended*: the firmware's limiter can move beat-synced strokes off the beat, and it re-times very slow strokes.
 
-**OSR2, SR6 and SSR1 do not.** They play every command as fast as their servos or motor can move. There is no firmware cap. A script with a 1 ms gap or a 17,000 units/s jump is executed at the device's top speed, so a careless or broken script becomes a full-power slam. For these devices this app is the safety layer: it finds those moves and caps them at a speed you choose before the device ever sees them.
+**OSR2, SR6 and SSR1 do not.** They play every command as fast as their servos or motor can move. There is no firmware cap. A script with a 1 ms gap or a 17,000 units/s jump is executed at the device's top speed, so a careless or broken script becomes a full-power slam. For these devices this app is the safety layer: it finds those moves and caps them before the device ever sees them. The default cap is **500 units/s, matched to the Handy**, because that limit has been tested by the community. You can set your own.
 
 | | The Handy | OSR2 / SR6 / SSR1 |
 |---|---|---|
@@ -52,10 +52,12 @@ You can also open a script directly: `python -m script_safety.gui "path/to/video
    - Grey is the original, blue is the fixed copy, red marks moves that are too fast.
    - Scroll to zoom and drag to move.
 5. **Check the Problems list.** It names each kind of problem in plain words, with how many there are **before** and **after** fixing. Click one to zoom the graph to it (highlighted in yellow). Click again for the next one.
-6. **Choose what to fix** on the right. The defaults are the safe choice. You can also pick how a too-fast stroke gets shortened:
-   - **by keeping bottoms on the beat** (or tops): beat-synced points stay exactly where the scripter put them.
-   - **by shortening evenly around the middle.**
-   - **by shortening toward the start**, the way the Handy firmware does.
+6. **Choose what to fix** on the right. The defaults are the safe choice.
+   - **Cap the speed at …** is your own speed limit. For OSR2 / SR6 / SSR1 it starts at 500 units/s (matched to the Handy); lower is gentler.
+   - You can also pick how a too-fast stroke gets shortened:
+     - **by keeping bottoms on the beat** (or tops): beat-synced points stay exactly where the scripter put them.
+     - **by shortening evenly around the middle.**
+     - **by shortening toward the start**, the way the Handy firmware does.
 7. **Save safe copy.** It writes `NAME.safe.funscript` next to the original. The original is never changed. If you turn off the speed limit, the button and file name change to **modified** instead of **safe**.
 
 **Advanced settings…** (bottom left) has every option, the full list of problems with exact times, and a log of what was changed.
@@ -66,7 +68,7 @@ These screenshots use `Stroker_Stress_Test.funscript`, the community stress-test
 
 ### Too fast for this device: the main danger on OSR2 / SR6 / SSR1
 
-On an OSR the stress test has **490 places** where moves exceed the 450 units/s cap, peaking at **17,000 units/s** (the bottom-left status line shows the peak). An OSR would try to play every red segment at full servo speed. The blue line is the fixed copy: the same shape, never faster than the cap. After fixing: **0** too-fast moves.
+On an OSR the stress test has **371 places** where moves exceed the 500 units/s cap, peaking at **17,000 units/s** (the bottom-left status line shows the peak). An OSR would try to play every red segment at full servo speed. The blue line is the fixed copy: the same shape, never faster than the cap. After fixing: **0** too-fast moves.
 
 ![Too-fast moves on an OSR2 / SR6, before (grey and red) and after (blue)](docs/images/03_osr_too_fast.png)
 
@@ -92,7 +94,7 @@ The Handy's firmware re-times strokes slower than about 33 units/s, so downstrok
 
 ### Everything on: all problems solved
 
-With every fix switched on, including **Tone down long, intense sections**, the stress test goes from **0 to 100** on every device profile. All 605 problems are solved for OSR2 / SR6.
+With every fix switched on, including **Tone down long, intense sections**, the stress test goes from **0 to 100** on every device profile. All 486 problems are solved for OSR2 / SR6.
 
 ![All problems solved for OSR2 / SR6](docs/images/08_osr_all_fixed.png)
 
@@ -106,9 +108,9 @@ With every fix switched on, including **Tone down long, intense sections**, the 
 
 | Problem (as shown in the app) | What it means | Fix |
 |---|---|---|
-| **Too fast for this device** | Moves above the device's speed limit. Dangerous on OSR2 / SR6 / SSR1, which play them at full power | Keep within the device's speed limit |
+| **Too fast for this device** | Moves above the speed cap. Dangerous on OSR2 / SR6 / SSR1, which play them at full power | Cap the speed at … |
 | **Actions too close together** | Gaps shorter than the device can follow: jolts on servo devices, skipped actions on the Handy over Bluetooth | Merge actions too close together |
-| **Starts at full speed / Restarts at full speed after a pause** | The device jumps from rest straight into fast strokes | Ease in at the start and after pauses |
+| **Starts at full speed** / **Restarts at full speed after a pause** | The device jumps from rest straight into fast strokes | Ease in at the start and after pauses |
 | **Device would play it off the beat** | (Handy online) the firmware's limiter would make strokes turn where the script doesn't | Keep bottoms (or tops) on the beat |
 | **Too slow: device would shift the timing** | (Handy online) the firmware would re-time these strokes | Fix strokes too slow for this device |
 | **Long, very intense section** | High average speed for 30 s or more: motor heat and fatigue, most relevant on devices that never slow down by themselves | Tone down long, intense sections (optional) |
@@ -126,16 +128,16 @@ Because OSR-type devices don't limit themselves, check every untested script, ev
 
 ## Device profiles
 
-| Device | Speed limit | Notes |
+| Device | Speed limit | Where the number comes from |
 |---|---|---|
-| The Handy (online/WiFi) | 500 u/s | Speed and slow limits observed in the threads; other values placeholders |
+| The Handy (online/WiFi) | 500 u/s | Its own firmware limit, observed by forum members (also its ~33 u/s slow limit) |
 | The Handy (Bluetooth) | 550 u/s | Estimate |
-| OSR2 / SR6 | 450 u/s | Estimate. **A safety cap, not the servo's top speed** |
-| SSR1 | 700 u/s | Estimate. **A safety cap, not the motor's top speed** |
+| OSR2 / SR6 | 500 u/s | **Self-defined safety cap**, matched to the Handy |
+| SSR1 | 500 u/s | **Self-defined safety cap**, matched to the Handy |
 | Kiiroo Launch / Keon, Vorze A10 Piston | 350–400 u/s | Estimates |
 | Generic / conservative | 400 u/s | For unknown hardware |
 
-For the Handy, the speed limit reflects what its firmware enforces anyway. For OSR2 / SR6 / SSR1 nothing enforces it except this app, so treat it as your own comfort and safety cap. You can set a lower one under **Advanced settings… › max speed**, or with a custom profile.
+OSR2, SR6 and SSR1 have no firmware limit, so there is no "real" number to measure that would make them safe. The cap is a choice. Because the goal is a safety layer, the default copies the Handy's 500 units/s, which the community has tested thoroughly. Change it at any time with **Cap the speed at …** in the app. A lower cap is gentler, a higher one is closer to the original script.
 
 **Custom profiles:** put a JSON file in `%USERPROFILE%\.script_safety_manager\profiles\`, then choose **File › Reload profiles**. Fields you leave out come from `base`:
 
@@ -150,12 +152,16 @@ For the Handy, the speed limit reflects what its firmware enforces anyway. For O
 
 Values are range-checked when loaded, so a bad profile can't switch the limits off.
 
+## Scope
+
+This app is for **single-axis (stroke) scripts**. Multi-axis files (`.roll`, `.twist`, `.pitch`, … for the SR6 and SSR1) open with a warning and are checked as if they were a stroke, which isn't meaningful. Multi-axis support isn't planned, because I don't own a multi-axis device to test with. Pull requests and contributions are welcome.
+
 ## What's been done
 
 - **Research:** collected how the Handy (online and Bluetooth), OSR2/SR6 and SSR1 handle too-fast, too-slow and dense scripts from the EroScripts threads, and compared with existing tools (funscript.io has modifiers but no device-specific checks).
 - **Checks:** too fast, too close together, hard starts and restarts, off-beat (by simulating the Handy firmware), too slow for the Handy, long intense sections, vibration bursts, sharp direction changes, and file problems. Each comes with a 0–100 score per device.
-- **Fixes:** speed limit with three shortening methods, including keeping bottoms or tops on the beat; merging close actions; ease-in; slow-stroke fix for the Handy; curve simplification for the Handy over Bluetooth; stroke range and invert; intensity cap.
-- **Device profiles** for the Handy (online and Bluetooth), OSR2/SR6, SSR1, Launch, Keon, A10 Piston, a generic profile, and your own custom profiles.
+- **Fixes:** a speed cap with three shortening methods, including keeping bottoms or tops on the beat; merging close actions; ease-in; slow-stroke fix for the Handy; curve simplification for the Handy over Bluetooth; stroke range and invert; intensity cap.
+- **Device profiles** for the Handy (online and Bluetooth), OSR2/SR6 and SSR1 (with a self-defined, Handy-matched cap), Launch, Keon, A10 Piston, a generic profile, and your own custom profiles.
 - **Security hardening:**
   - broken or hostile files are refused;
   - bad profile values are rejected;
@@ -163,24 +169,21 @@ Values are range-checked when loaded, so a bad profile can't switch the limits o
   - the original file is never overwritten;
   - nothing is sent over the network;
   - saved files record what was changed, but no personal information.
-- **Desktop app:** the one-screen workflow above, tested on Windows with the stress-test script.
-- **Tests:** 52 automated tests, including hostile inputs, the cases from the threads, and a check that every device profile reaches zero problems on the stress test with all fixes on.
+- **Desktop app:** the one-screen workflow above, with your own speed cap, tested on Windows with the stress-test script.
+- **Tests:** 54 automated tests, including hostile inputs, the cases from the threads, and a check that every device profile reaches zero problems on the stress test with all fixes on.
 
 ## What's next
 
-In order of priority:
+1. **Windows installer:** a single `.exe`, so users don't need Python.
+2. **Batch mode in the app:** check and fix a whole folder at once, with a summary of which scripts are unsafe.
+3. **Profile editor in the app**, and an easy way to share profiles.
+4. **Follow Handy firmware changes:** the Handy's official [firmware change logs](https://intercom.help/ohdoki/en/collections/10608301-change-logs) list each release. Add the firmware version a Handy profile was based on, and update its limits when a release changes them.
 
-1. **Measure real device limits, starting with OSR2 / SR6 / SSR1.** For these devices the app is the only protection, but their limits are still estimates. Play the stress test with the stroke length turned down, film it, and turn the results into verified profiles.
-2. **Multi-axis scripts for the SR6 and SSR1.** Twist, roll and pitch files are checked one at a time today. They should load together, with a speed limit for each axis.
-3. **Windows installer:** a single `.exe`, so users don't need Python.
-4. **Batch mode in the app:** check and fix a whole folder at once, with a summary of which scripts are unsafe.
-5. **Profile editor in the app**, and an easy way to share measured profiles.
-6. **Handy firmware version** in the profile, since its limits can change between versions.
-7. **Later:** a video-synced preview, and a live preview on a connected device through Intiface.
+Not planned: multi-axis scripts (see [Scope](#scope)), measuring OSR2 / SR6 / SSR1 limits (the cap is self-defined), video preview and live device preview.
 
 ## Safety note
 
-This app lowers the risk from badly made scripts, but it can't know your device's condition, its settings, or your limits, and most profile numbers are estimates. Especially on OSR2 / SR6 / SSR1: start with the device's own stroke length and speed turned down, keep its stop control or power within reach, and stop at once if anything feels wrong.
+This app lowers the risk from badly made scripts, but it can't know your device's condition, its settings, or your limits, and the speed cap is a choice, not a guarantee. Especially on OSR2 / SR6 / SSR1: start with the device's own stroke length and speed turned down, keep its stop control or power within reach, and stop at once if anything feels wrong.
 
 ## For developers
 

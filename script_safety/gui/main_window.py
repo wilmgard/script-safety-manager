@@ -210,8 +210,18 @@ class FixPanel(QGroupBox):
             c.toggled.connect(lambda v, f=field: self._set(f, v))
             return c
 
-        self.speed = check("speed_limit", "Keep within the device's speed limit",
-                           "Shortens strokes that are faster than the device can move.")
+        self.speed = check("speed_limit", "Cap the speed at",
+                           "Shortens strokes that are faster than the cap. On devices without a firmware limit "
+                           "(OSR2 / SR6 / SSR1) this cap is the only thing protecting you.")
+        self.profile_max = 500.0
+        self.cap = QSpinBox()
+        self.cap.setRange(50, 2000)
+        self.cap.setSingleStep(10)
+        self.cap.setSuffix(" units/s")
+        self.cap.setKeyboardTracking(False)
+        self.cap.setToolTip("Your own speed limit. The default for OSR2 / SR6 / SSR1 matches the Handy (online), "
+                            "whose 500 units/s limit is well tested. Lower is gentler.")
+        self.cap.valueChanged.connect(self._cap_changed)
         self.profile_mode = "preserve_anchor"
         self.anchor = QComboBox()
         for text, data in (("by keeping bottoms on the beat", ("preserve_anchor", "bottom")),
@@ -243,11 +253,15 @@ class FixPanel(QGroupBox):
         rng.addWidget(self.hi)
         rng.addStretch(1)
 
+        cap_row = QHBoxLayout()
+        cap_row.addWidget(self.speed)
+        cap_row.addWidget(self.cap)
+        cap_row.addStretch(1)
         indent = QHBoxLayout()
         indent.addSpacing(24)
         indent.addWidget(self.anchor)
         indent.addStretch(1)
-        g.addWidget(self.speed, 0, 0)
+        g.addLayout(cap_row, 0, 0)
         g.addLayout(indent, 1, 0)
         g.setContentsMargins(10, 14, 10, 10)
         for row, w in enumerate((self.slow, self.interval, self.ease, self.calm), start=2):
@@ -265,6 +279,10 @@ class FixPanel(QGroupBox):
         if any(getattr(opts, k) != v for k, v in changes.items()):
             self.options.set_options(dataclasses.replace(opts, **changes))
 
+    def _cap_changed(self, value):
+        # Equal to the device default -> store "profile default", so switching devices follows each default.
+        self._set("max_speed", None if value == round(self.profile_max) else float(value))
+
     def _limiter_chosen(self, *_):
         mode, anchor = self.anchor.currentData()
         # Store "profile default" when the choice matches the device's own default, so switching
@@ -276,7 +294,8 @@ class FixPanel(QGroupBox):
 
     def sync(self) -> None:
         o = self.options.options()
-        widgets = (self.speed, self.slow, self.interval, self.ease, self.calm, self.anchor, self.lo, self.hi)
+        widgets = (self.speed, self.cap, self.slow, self.interval, self.ease, self.calm, self.anchor, self.lo,
+                   self.hi)
         for w in widgets:
             w.blockSignals(True)
         self.speed.setChecked(o.speed_limit)
@@ -289,6 +308,8 @@ class FixPanel(QGroupBox):
         self.anchor.setCurrentIndex(max(0, next((i for i in range(self.anchor.count())
                                                  if self.anchor.itemData(i) == want), 0)))
         self.anchor.setEnabled(o.speed_limit)
+        self.cap.setValue(round(o.max_speed or self.profile_max))
+        self.cap.setEnabled(o.speed_limit)
         self.lo.setMaximum(int(o.range_max) - 1)
         self.hi.setMinimum(int(o.range_min) + 1)
         self.lo.setValue(int(o.range_min))
@@ -299,6 +320,7 @@ class FixPanel(QGroupBox):
     def set_profile(self, p: DeviceProfile) -> None:
         self.slow.setVisible(p.min_speed > 0)
         self.profile_mode = p.speed_limit_mode
+        self.profile_max = p.max_speed
         self.sync()
 
 
@@ -543,13 +565,19 @@ class MainWindow(QMainWindow):
         if not self.profiles:
             return
         p = self.profile
-        bits = [f"top speed {p.max_speed:.0f} units/s"]
         if p.firmware_limiter:
-            bits.append("firmware rewrites strokes that are too fast")
-        if p.min_speed:
-            bits.append(f"and slower than {p.min_speed:.0f} units/s")
-        if not p.verified:
-            bits.append("these numbers are estimates")
+            bits = [f"firmware limits speed to about {p.max_speed:.0f} units/s"]
+            if p.min_speed:
+                bits.append(f"and re-times strokes slower than {p.min_speed:.0f} units/s")
+        elif p.limit_source == "handy_matched":
+            bits = ["no firmware speed limit: plays every move at full speed",
+                    f"default cap {p.max_speed:.0f} units/s, matched to the Handy (set your own below)"]
+        else:
+            bits = [f"speed limit {p.max_speed:.0f} units/s"]
+        if p.limit_source == "estimate":
+            bits.append("numbers are estimates")
+        elif p.limit_source == "custom":
+            bits.append("your custom profile")
         self.profile_label.setText(" · ".join(bits))
         self.profile_label.setToolTip(p.notes)
         self.fix_panel.set_profile(p)
@@ -572,7 +600,9 @@ class MainWindow(QMainWindow):
         self._fresh_load = True
         self._jump_index.clear()
         p = script.path
-        axis = "" if script.axis == "L0" else f" · {script.axis} axis"
+        axis = "" if script.axis == "L0" else (
+            f" · <span style='color:{OK}'>⚠ {script.axis} axis: this app is built for single-axis (stroke) "
+            f"scripts only</span>")
         self.file_label.setText(f"<b>{p.name}</b> &nbsp;<span style='color:#888'>{_ts(script.duration_ms)[:5]} · "
                                 f"{len(script.actions):,} actions{axis}</span>")
         self.file_label.setToolTip(str(p))

@@ -88,3 +88,29 @@ def test_simple_flow(app, tmp_path):
     assert win.save_button.text() == "Save modified copy"
     assert win.output_path().name == "Stroker_Stress_Test.modified.funscript"
     win.close()
+
+
+def test_speed_cap_is_user_defined(app, tmp_path):
+    src = tmp_path / STRESS.name
+    shutil.copy(STRESS, src)
+    win = MainWindow()
+    win.set_profile("osr")
+    assert win.load_file(src)
+    assert win.fix_panel.cap.value() == 500            # matched to the Handy by default
+    assert "matched to the Handy" in win.profile_label.text()
+    win.fix_panel.cap.setValue(300)
+    assert win.options.options().max_speed == 300
+    win.recompute()
+    assert any("under 300 u/s" in s for _, s in win.result.steps)
+    win.fix_panel.cap.setValue(500)                    # back to the device default
+    assert win.options.options().max_speed is None
+    win.close()
+
+
+def test_multi_axis_file_warns(app, tmp_path):
+    src = tmp_path / "video.roll.funscript"
+    shutil.copy(STRESS, src)
+    win = MainWindow()
+    assert win.load_file(src)
+    assert "single-axis" in win.file_label.text()
+    win.close()

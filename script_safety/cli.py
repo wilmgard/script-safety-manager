@@ -68,7 +68,8 @@ def _ts(ms: int) -> str:
 
 def cmd_profiles(args) -> int:
     for p in all_profiles().values():
-        flag = "" if p.verified else "  (unverified)"
+        flag = {"observed": "", "handy_matched": "  (cap matched to the Handy)", "estimate": "  (estimate)",
+                "custom": "  (custom)"}[p.limit_source]
         print(f"{p.key:14} {p.name:26} max {p.max_speed:>4.0f} u/s, min interval {p.min_interval_ms:>3} ms, "
               f"limit mode {p.speed_limit_mode}{flag}")
     return 0

@@ -12,6 +12,7 @@ from dataclasses import asdict, dataclass, fields
 from pathlib import Path
 
 SPEED_LIMIT_MODES = ("preserve_anchor", "shorten_start", "shorten_center")
+LIMIT_SOURCES = ("observed", "handy_matched", "estimate", "custom")
 
 
 @dataclass
@@ -29,6 +30,9 @@ class DeviceProfile:
     firmware_limiter: bool = False      # device rewrites over-fast moves itself (shortening toward the start)
     thin_spacing_ms: int = 0            # keep simplified curve points at least this far apart (0 = no constraint)
     verified: bool = False
+    # Where the limits come from: observed (forum testing), handy_matched (a self-chosen safety cap copied
+    # from the well-tested Handy), estimate (placeholder) or custom (user profile file).
+    limit_source: str = "estimate"
     notes: str = ""
 
     def __post_init__(self):
@@ -42,6 +46,8 @@ class DeviceProfile:
         num("sustained_window_ms", 1000, 600000)
         num("min_speed", 0, 200)
         num("thin_spacing_ms", 0, 2000)
+        if self.limit_source not in LIMIT_SOURCES:
+            raise ValueError(f"profile '{self.key}': limit_source must be one of {', '.join(LIMIT_SOURCES)}")
         if self.min_speed >= self.max_speed:
             raise ValueError(f"profile '{self.key}': min_speed must be below max_speed")
         if self.speed_limit_mode not in SPEED_LIMIT_MODES:
@@ -69,7 +75,7 @@ BUILTIN: dict[str, DeviceProfile] = {p.key: p for p in [
     DeviceProfile(
         "handy_online", "The Handy (online/WiFi)",
         max_speed=500, min_interval_ms=20, vibration_ok=True, thin_interpolation=False,
-        speed_limit_mode="preserve_anchor", min_speed=33, firmware_limiter=True, verified=True,
+        speed_limit_mode="preserve_anchor", min_speed=33, firmware_limiter=True, verified=True, limit_source="observed",
         notes="Observed: firmware shortens strokes over ~500 u/s toward their start (moving beat-synced "
               "bottoms) and re-times strokes under ~33 u/s. We pre-limit so the firmware never has to. "
               "Vibrations play well. min_interval is a placeholder."),
@@ -81,14 +87,18 @@ BUILTIN: dict[str, DeviceProfile] = {p.key: p for p in [
               "simplified to fewer, spaced points), moves faster than online mode. Numbers are placeholders."),
     DeviceProfile(
         "osr", "OSR2 / SR6",
-        max_speed=450, min_interval_ms=20, vibration_ok=False, thin_interpolation=False,
+        max_speed=500, min_interval_ms=20, vibration_ok=False, thin_interpolation=False, limit_source="handy_matched",
         speed_limit_mode="shorten_center",
-        notes="Servo-dependent. Vibrations weaker than on other devices. Interpolation fine."),
+        notes="No firmware speed limit: plays every move at full servo speed. The cap is a self-chosen safety "
+              "layer matched to the well-tested Handy (online); set your own in the app. Vibrations weaker "
+              "than on other devices. Interpolation fine."),
     DeviceProfile(
         "ssr1", "SSR1",
-        max_speed=700, min_interval_ms=15, vibration_ok=True, thin_interpolation=False,
+        max_speed=500, min_interval_ms=20, vibration_ok=True, thin_interpolation=False, limit_source="handy_matched",
         speed_limit_mode="shorten_center",
-        notes="Brushless gimbal motor; vibrations and interpolation reported fine."),
+        notes="No firmware speed limit: plays every move at full motor speed. The cap is a self-chosen safety "
+              "layer matched to the well-tested Handy (online); set your own in the app. Vibrations and "
+              "interpolation reported fine."),
     DeviceProfile(
         "launch", "Kiiroo Launch",
         max_speed=400, min_interval_ms=100, vibration_ok=False, thin_interpolation=True,
@@ -126,6 +136,7 @@ def load_profile_file(path: str | Path) -> DeviceProfile:
     base["key"] = d.get("key", Path(path).stem)
     base["name"] = d.get("name", base["key"])
     base["verified"] = d.get("verified", False)
+    base["limit_source"] = d.get("limit_source", "custom")
     return DeviceProfile.from_dict(base)
 
 
