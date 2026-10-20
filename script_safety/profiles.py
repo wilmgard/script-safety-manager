@@ -86,6 +86,12 @@ BUILTIN: dict[str, DeviceProfile] = {p.key: p for p in [
         notes="Observed: skips actions at high frequency, micro-stutters after every point (so curves are "
               "simplified to fewer, spaced points), moves faster than online mode. Numbers are placeholders."),
     DeviceProfile(
+        "homebrew", "Homebrew device (no firmware limit)",
+        max_speed=500, min_interval_ms=20, vibration_ok=False, thin_interpolation=False, limit_source="handy_matched",
+        speed_limit_mode="shorten_center",
+        notes="For untested and homebrew devices that play every move as fast as their motor can go. The cap is a "
+              "self-chosen safety layer matched to the well-tested Handy (online); set your own in the app."),
+    DeviceProfile(
         "osr", "OSR2 / SR6",
         max_speed=500, min_interval_ms=20, vibration_ok=False, thin_interpolation=False, limit_source="handy_matched",
         speed_limit_mode="shorten_center",
