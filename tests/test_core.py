@@ -296,3 +296,11 @@ def test_thin_handles_very_long_runs():
     run = acts(*[(k, k * 100 // 20000) for k in range(20001)])
     out, _ = fixers.thin_interpolation(run, 0.5)
     assert out[0].at == 0 and out[-1].at == 20000
+
+
+def test_all_fixes_on_leave_no_problems_on_stress_test():
+    s = model.load(STRESS)
+    for p in BUILTIN.values():
+        res = apply(s, p, FixOptions(intensity_cap=True))
+        left = [f.kind for f in analyze(res.script, p).findings if f.severity != "info"]
+        assert left == [], (p.key, left)

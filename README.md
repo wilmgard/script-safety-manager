@@ -2,7 +2,7 @@
 
 A local, offline tool that checks a `.funscript` against the device you will actually play it on, and writes a fixed copy that the device can play **as the scripter wrote it**: on the beat, within its speed limits, and without surprises.
 
-> Status: core library and command-line tool work and are tested. A desktop GUI (PySide6) is in progress.
+> Status: desktop app and command-line tool both work and are tested. Device profiles are still mostly estimates.
 
 ## Why
 
@@ -18,7 +18,7 @@ So there is no single "safe" script. This tool works **per device profile**, pre
 
 ## Install
 
-Requires Python 3.10 or newer (developed on 3.14). The core has no dependencies.
+Requires Python 3.10 or newer (developed on 3.14). The command line has no dependencies; the desktop app needs PySide6, pyqtgraph and numpy (`requirements.txt`).
 
 ```bash
 git clone https://github.com/wilmgard/script-safety-manager.git
@@ -26,7 +26,24 @@ cd script-safety-manager
 pip install pytest   # only needed to run the tests
 ```
 
-## Usage
+## Desktop app
+
+```bash
+pip install -r requirements.txt
+python -m script_safety.gui            # or: python -m script_safety.gui video.funscript
+```
+
+1. **Open** a script (button, or drag it onto the window) and pick your **device**.
+2. The **score** shows how well the original plays on that device and how well the fixed copy will (0-100).
+3. The **graph** shows the original (grey), the fixed version (blue) and moves that are too fast (red).
+4. **Problems** lists what is wrong in plain words with before/after counts. Click one to jump to it.
+5. **What to fix** has the few switches most people need, including how too-fast strokes are shortened
+   (keep bottoms or tops on the beat, shorten evenly, or the Handy firmware's way).
+6. **Save safe copy** writes `NAME.safe.funscript` next to the original. The original is never changed.
+
+Every option, the full problem list and a log of what was changed are under **Advanced settings…**.
+
+## Command line
 
 ```bash
 python -m script_safety profiles                                  # list device profiles
@@ -118,6 +135,7 @@ python -m pytest -q
 | `script_safety/fixers.py` | Individual fixes |
 | `script_safety/pipeline.py` | Fix order and options |
 | `script_safety/cli.py` | Command line |
+| `script_safety/gui/` | Desktop app (PySide6 + pyqtgraph); holds no safety logic of its own |
 | `tests/` | pytest suite, including hostile-input tests |
 | `Stroker_Stress_Test.funscript` | Stress-test script from the community thread, used as a test fixture |
 

@@ -100,7 +100,9 @@ def apply(script: Funscript, profile: DeviceProfile, opts: FixOptions | None = N
     if opts.soft_start:
         run("soft_start", fixers.soft_start, opts.ramp_ms, opts.ramp_start_factor)
     if opts.intensity_cap:
-        run("intensity_cap", fixers.intensity_cap, profile.sustained_speed, profile.sustained_window_ms)
+        # Aim 10% under the limit: the cap uses a centred window, the check a trailing one, and later
+        # steps (speed limit, slow fix) shift positions slightly.
+        run("intensity_cap", fixers.intensity_cap, profile.sustained_speed * 0.9, profile.sustained_window_ms)
     # Speed limit runs after everything that moves positions, so nothing can push a move back over it.
     if opts.speed_limit:
         run("speed_limit", fixers.speed_limit, opts.max_speed or profile.max_speed,

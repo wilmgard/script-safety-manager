@@ -270,7 +270,8 @@ def analyze(script: Funscript, profile: DeviceProfile) -> Report:
     if heavy:
         groups, cur = [], [heavy[0]]
         for h in heavy[1:]:
-            if h[0] - cur[-1][0] <= 1:
+            # Stretches that dip just under the limit for a moment are still one intense section.
+            if acts[h[0]].at - acts[cur[-1][0]].at <= profile.sustained_window_ms // 2:
                 cur.append(h)
             else:
                 groups.append(cur)

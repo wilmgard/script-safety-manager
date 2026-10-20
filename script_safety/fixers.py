@@ -9,7 +9,7 @@ import heapq
 import math
 from bisect import bisect_left, bisect_right
 
-from .analysis import PAUSE_MS, find_bursts, find_resumes, turning_points
+from .analysis import PAUSE_MS, find_bursts, find_resumes, rolling_speed, turning_points
 from .model import Action
 
 Result = tuple[list[Action], str]
@@ -281,10 +281,23 @@ def soft_start(actions: list[Action], ramp_ms: int = 2000, start_factor: float =
 
 
 def intensity_cap(actions: list[Action], max_avg_speed: float, window_ms: int = 30000) -> Result:
-    """Scale stroke depth down wherever the average speed over a centred window exceeds max_avg_speed."""
-    n = len(actions)
-    if n < 3:
+    """Scale stroke depth down wherever the average speed over a window exceeds max_avg_speed.
+    Repeats (a few passes at most) until the trailing-window average, the one the analysis checks,
+    is under the cap too."""
+    if len(actions) < 3:
         return [a.copy() for a in actions], "skipped"
+    out = actions
+    changed: set[int] = set()
+    for _ in range(6):
+        out, touched = _intensity_pass(out, max_avg_speed, window_ms)
+        changed |= touched
+        if not touched or max((s for _, s in rolling_speed(out, window_ms)), default=0) <= max_avg_speed:
+            break
+    return out, f"{len(changed)} action(s) reduced to keep {window_ms // 1000}s average under {max_avg_speed:.0f} u/s"
+
+
+def _intensity_pass(actions: list[Action], max_avg_speed: float, window_ms: int) -> tuple[list[Action], set[int]]:
+    n = len(actions)
     times = [a.at for a in actions]
     dist = [0.0]
     psum = [0.0]
@@ -292,7 +305,7 @@ def intensity_cap(actions: list[Action], max_avg_speed: float, window_ms: int = 
         if k:
             dist.append(dist[-1] + abs(actions[k].pos - actions[k - 1].pos))
         psum.append(psum[-1] + actions[k].pos)
-    out, touched = [], 0
+    out, touched = [], set()
     for k, a in enumerate(actions):
         lo = bisect_left(times, a.at - window_ms // 2)
         hi = bisect_right(times, a.at + window_ms // 2) - 1
@@ -302,7 +315,8 @@ def intensity_cap(actions: list[Action], max_avg_speed: float, window_ms: int = 
             centre = (psum[hi + 1] - psum[lo]) / (hi - lo + 1)
             f = max_avg_speed / avg
             out.append(Action(a.at, float(round(centre + (a.pos - centre) * f))))
-            touched += 1
+            if out[-1].pos != a.pos:
+                touched.add(a.at)
         else:
             out.append(a.copy())
-    return out, f"{touched} action(s) reduced to keep {window_ms // 1000}s average under {max_avg_speed:.0f} u/s"
+    return out, touched

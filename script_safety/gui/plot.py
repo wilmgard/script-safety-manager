@@ -8,7 +8,7 @@ from PySide6.QtCore import QRectF
 from ..model import Action
 
 ORIGINAL_PEN = pg.mkPen("#8a8a8a", width=1)
-FIXED_PEN = pg.mkPen("#3daee9", width=1.5)
+FIXED_PEN = pg.mkPen("#1f8fd6", width=1.6)
 OVERSPEED_PEN = pg.mkPen((255, 60, 60, 170), width=4)
 HEAT_BIN_S = 0.02          # heatmap resolution
 HEAT_MAX_FACTOR = 1.5      # speed / max_speed that maps to the top of the colour scale
@@ -47,24 +47,46 @@ def heat_row(t: np.ndarray, s: np.ndarray, n_bins: int) -> np.ndarray:
     return row
 
 
+class TimeAxis(pg.AxisItem):
+    """Seconds shown as m:ss, the way people read video time."""
+
+    def tickStrings(self, values, scale, spacing):
+        out = []
+        for v in values:
+            v = max(0.0, v)
+            m, s = divmod(v, 60)
+            out.append(f"{int(m)}:{s:04.1f}" if spacing < 1 else f"{int(m)}:{int(s):02d}")
+        return out
+
+
 class ScriptPlot(pg.GraphicsLayoutWidget):
-    def __init__(self, parent=None):
+    def __init__(self, parent=None, show_heat: bool = True):
         super().__init__(parent)
-        self.main = self.addPlot(row=0, col=0)
+        # Follow the window colours (light or dark) instead of pyqtgraph's default black.
+        pal = self.palette()
+        self.setBackground(pal.base().color())
+        self._axis_pen = pg.mkPen(pal.text().color())
+        self.main = self.addPlot(row=0, col=0, axisItems={"bottom": TimeAxis("bottom")})
         self.main.setLabel("left", "position")
         self.main.setYRange(-2, 102, padding=0)
         self.main.setLimits(yMin=-10, yMax=110, xMin=-5)
         self.main.setMouseEnabled(x=True, y=False)
         self.main.showGrid(x=True, y=True, alpha=0.15)
         self.main.addLegend(offset=(10, 5))
-        self.overspeed = self.main.plot([], [], pen=OVERSPEED_PEN, connect="pairs", name="over speed (original)")
+        self.overspeed = self.main.plot([], [], pen=OVERSPEED_PEN, connect="pairs", name="too fast (original)")
         self.original = self.main.plot([], [], pen=ORIGINAL_PEN, name="original")
         self.fixed = self.main.plot([], [], pen=FIXED_PEN, name="fixed")
+        self.highlight = pg.LinearRegionItem(movable=False, brush=(255, 200, 0, 50), pen=pg.mkPen(None))
+        self.highlight.setZValue(-10)
+        self.highlight.hide()
+        self.main.addItem(self.highlight)
         for item in (self.original, self.fixed):
             item.setClipToView(True)
             item.setDownsampling(auto=True, method="peak")
 
-        self.heat = self.addPlot(row=1, col=0)
+        self.heat = self.addPlot(row=1, col=0, axisItems={"bottom": TimeAxis("bottom")})
+        self.heat.setVisible(show_heat)
+        self.main.getAxis("bottom").setStyle(showValues=not show_heat)
         self.heat.setMaximumHeight(55)
         self.heat.setXLink(self.main)
         self.heat.setMouseEnabled(x=True, y=False)
@@ -72,6 +94,10 @@ class ScriptPlot(pg.GraphicsLayoutWidget):
         self.heat.setLabel("bottom", "time", units="s")
         self.heat.getAxis("left").setTicks([[(1.5, "orig"), (0.5, "fixed")]])
         self.main.getAxis("left").setWidth(45)
+        for plot in (self.main, self.heat):
+            for name in ("left", "bottom"):
+                plot.getAxis(name).setPen(self._axis_pen)
+                plot.getAxis(name).setTextPen(self._axis_pen)
         self.heat.getAxis("left").setWidth(45)
         self.heat_img = pg.ImageItem(axisOrder="row-major")
         self.heat.addItem(self.heat_img)
@@ -95,9 +121,12 @@ class ScriptPlot(pg.GraphicsLayoutWidget):
         self.heat_img.setRect(QRectF(0, 0, n * HEAT_BIN_S, 2))
         self.main.setLimits(xMax=duration + 5)
         if reset_view:
+            self.highlight.hide()
             self.main.setXRange(0, duration, padding=0.01)
 
     def zoom_to(self, start_ms: int, end_ms: int) -> None:
         span = max(end_ms - start_ms, 500)
         pad = max(span * 0.5, 1000)
         self.main.setXRange((start_ms - pad) / 1000, (end_ms + pad) / 1000, padding=0)
+        self.highlight.setRegion((start_ms / 1000, max(end_ms, start_ms + 100) / 1000))
+        self.highlight.show()

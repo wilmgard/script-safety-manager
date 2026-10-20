@@ -47,3 +47,44 @@ def test_window_loads_recomputes_and_saves(app, tmp_path):
     assert dest.name == "Stroker_Stress_Test.safe.funscript"
     assert len(model.load(dest).actions) == len(win.result.script.actions)
     win.close()
+
+
+def test_simple_flow(app, tmp_path):
+    src = tmp_path / STRESS.name
+    shutil.copy(STRESS, src)
+    win = MainWindow()
+    assert win.pages.currentIndex() == 0          # empty state invites a drop
+    win.set_profile("handy_online")
+    assert win.load_file(src)
+    assert win.pages.currentIndex() == 1
+    assert win.problems.rowCount() > 0 and win.problems.kinds[0] == "over_speed"
+    assert win.badge_after.text() and "fixed" in win.verdict_label.text()
+
+    # Plain checkboxes write through to the full options
+    win.fix_panel.calm.setChecked(True)
+    assert win.options.options().intensity_cap
+    win.recompute()
+    assert "intensity_cap" in [n for n, _ in win.result.steps]
+
+    # The slow-stroke fix only shows for devices that need it
+    win.set_profile("osr")
+    assert win.fix_panel.slow.isHidden()
+    # OSR's own limiter is shown as its default, and choosing "keep bottoms" really switches the limiter
+    assert win.fix_panel.anchor.currentData() == ("shorten_center", None)
+    win.fix_panel.anchor.setCurrentIndex(0)
+    assert win.options.options().speed_mode == "preserve_anchor"
+    win.recompute()
+    assert any("preserve_anchor" in s for _, s in win.result.steps)
+
+    # Clicking a problem zooms to it and cycles through occurrences
+    win.jump_to("over_speed")
+    first = win.plot.main.viewRange()[0]
+    win.jump_to("over_speed")
+    assert win.plot.main.viewRange()[0] != first
+
+    # Turning the speed limit off renames the output honestly
+    win.fix_panel.speed.setChecked(False)
+    win.recompute()
+    assert win.save_button.text() == "Save modified copy"
+    assert win.output_path().name == "Stroker_Stress_Test.modified.funscript"
+    win.close()
