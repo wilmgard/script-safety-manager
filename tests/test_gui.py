@@ -1,4 +1,5 @@
 """Offscreen smoke test for the PySide6 GUI."""
+import json
 import os
 import shutil
 from pathlib import Path
@@ -140,4 +141,26 @@ def test_dropdown_lists_homebrew_and_named_devices(app):
         assert name in names
     win.set_profile("osr")
     assert win.fix_panel.cap.value() == 500 and "matched to the Handy" in win.profile_label.text()
+    win.close()
+
+
+def test_script_text_cannot_restyle_dialogs(app, tmp_path):
+    f = tmp_path / "inj.funscript"
+    f.write_text('{"actions":[{"at":0,"pos":0},{"at":500,"pos":"<b style=\'color:green\'>all fine</b>"},'
+                 '{"at":1000,"pos":100}]}')
+    win = MainWindow()
+    try:
+        model.load(f)
+    except model.BrokenActionsError as e:
+        text = win.repair_box(e).text()
+    assert "<b style=" not in text and "&lt;b style=" in text
+    win.close()
+
+
+def test_long_script_does_not_exhaust_memory(app, tmp_path):
+    f = tmp_path / "long.funscript"
+    f.write_text(json.dumps({"actions": [{"at": 0, "pos": 0}, {"at": 23 * 3600 * 1000, "pos": 100}]}))
+    win = MainWindow()
+    assert win.load_file(f)
+    assert win.plot.heat_img.image.shape[1] <= 200_000
     win.close()

@@ -11,6 +11,7 @@ ORIGINAL_PEN = pg.mkPen("#8a8a8a", width=1)
 FIXED_PEN = pg.mkPen("#1f8fd6", width=1.6)
 OVERSPEED_PEN = pg.mkPen((255, 60, 60, 170), width=4)
 HEAT_BIN_S = 0.02          # heatmap resolution
+HEAT_MAX_BINS = 200_000    # caps memory however long a script claims to be
 HEAT_MAX_FACTOR = 1.5      # speed / max_speed that maps to the top of the colour scale
 
 # 0 = still, 1/1.5 = exactly the profile limit, above that is over-speed.
@@ -35,13 +36,13 @@ def segment_speeds(t: np.ndarray, p: np.ndarray) -> np.ndarray:
     return s
 
 
-def heat_row(t: np.ndarray, s: np.ndarray, n_bins: int) -> np.ndarray:
+def heat_row(t: np.ndarray, s: np.ndarray, n_bins: int, bin_s: float = HEAT_BIN_S) -> np.ndarray:
     """Peak speed per time bin, so short fast moves are never averaged away."""
     row = np.zeros(n_bins)
     if len(s) == 0:
         return row
-    b0 = np.clip((t[:-1] / HEAT_BIN_S).astype(int), 0, n_bins - 1)
-    b1 = np.clip((t[1:] / HEAT_BIN_S).astype(int), 0, n_bins - 1)
+    b0 = np.clip((t[:-1] / bin_s).astype(int), 0, n_bins - 1)
+    b1 = np.clip((t[1:] / bin_s).astype(int), 0, n_bins - 1)
     for i in np.argsort(s, kind="stable"):   # ascending, so the fastest segment wins shared bins
         row[b0[i]:b1[i] + 1] = s[i]
     return row
@@ -115,11 +116,12 @@ class ScriptPlot(pg.GraphicsLayoutWidget):
         self.fixed.setData(tf, pf)
 
         duration = max(to[-1] if len(to) else 0, tf[-1] if len(tf) else 0, 1.0)
-        n = int(duration / HEAT_BIN_S) + 1
-        rows = np.vstack([heat_row(tf, segment_speeds(tf, pf), n), heat_row(to, so, n)])
+        n = min(int(duration / HEAT_BIN_S) + 1, HEAT_MAX_BINS)
+        bin_s = max(HEAT_BIN_S, duration / n)
+        rows = np.vstack([heat_row(tf, segment_speeds(tf, pf), n, bin_s), heat_row(to, so, n, bin_s)])
         norm = np.clip(np.nan_to_num(rows / (max_speed * HEAT_MAX_FACTOR), posinf=1.0), 0, 1)
         self.heat_img.setImage(HEAT_MAP.map(norm, mode="byte"), autoLevels=False)
-        self.heat_img.setRect(QRectF(0, 0, n * HEAT_BIN_S, 2))
+        self.heat_img.setRect(QRectF(0, 0, n * bin_s, 2))
         self.main.setLimits(xMax=duration + 5)
         if reset_view:
             self.highlight.hide()

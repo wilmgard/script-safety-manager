@@ -354,3 +354,28 @@ def test_cli_repair_flag(tmp_path, capsys):
     assert main(["fix", str(f), "--repair"]) == 0
     assert "removed 7 broken action(s)" in capsys.readouterr().err
     assert (tmp_path / "broken.safe.funscript").exists()
+
+
+# --- limits for hostile files (security review) -----------------------------------
+
+def test_far_future_times_are_broken_actions(tmp_path):
+    f = tmp_path / "future.funscript"
+    f.write_text(json.dumps({"actions": [{"at": 0, "pos": 0}, {"at": 10**13, "pos": 100}, {"at": 1000, "pos": 50}]}))
+    with pytest.raises(model.BrokenActionsError, match="beyond 24 hours"):
+        model.load(f)
+    assert [a.at for a in model.load(f, repair=True).actions] == [0, 1000]
+
+
+def test_oversized_file_refused_before_reading(tmp_path, monkeypatch):
+    f = tmp_path / "big.funscript"
+    f.write_text('{"actions":[{"at":0,"pos":0}]}')
+    monkeypatch.setattr(model, "MAX_FILE_BYTES", 10)
+    with pytest.raises(ValueError, match="far larger than any real funscript"):
+        model.load(f)
+
+
+def test_huge_number_literal_is_a_clean_error(tmp_path):
+    f = tmp_path / "digits.funscript"
+    f.write_text('{"actions":[{"at":' + "9" * 10000 + ',"pos":1}]}')
+    with pytest.raises(ValueError):
+        model.load(f)

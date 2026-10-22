@@ -11,6 +11,7 @@ Every core option is still reachable under "Advanced settings".
 from __future__ import annotations
 
 import dataclasses
+from html import escape
 from pathlib import Path
 
 from PySide6.QtCore import QAbstractTableModel, QModelIndex, QSortFilterProxyModel, Qt, QTimer
@@ -50,6 +51,19 @@ PROBLEM_NAMES = {
     "vibration": "Vibration bursts (note)",
     "hard_reversal": "Sharp direction changes (note)",
 }
+
+
+def _alert(parent, icon, title: str, text: str) -> None:
+    """Message box that shows text exactly as given. Error messages quote file names and file contents,
+    which must never be interpreted as Qt rich text (that would let a script restyle the dialog)."""
+    box = QMessageBox(icon, title, text, QMessageBox.Ok, parent)
+    box.setTextFormat(Qt.PlainText)
+    box.exec()
+
+
+def _tip(text: str) -> str:
+    """Tooltip-safe: Qt guesses rich text for tooltips, so escape and mark it as rich text explicitly."""
+    return f"<p>{escape(text)}</p>"
 
 
 def _ts(ms: int) -> str:
@@ -542,7 +556,7 @@ class MainWindow(QMainWindow):
         try:
             self.profiles = all_profiles()
         except (OSError, ValueError) as e:   # a broken user profile file shouldn't kill the app
-            QMessageBox.warning(self, "Profiles", f"Could not load your custom profiles:\n{e}")
+            _alert(self, QMessageBox.Warning, "Profiles", f"Could not load your custom profiles:\n{e}")
             self.profiles = dict(BUILTIN)
         self.profile_combo.blockSignals(True)
         self.profile_combo.clear()
@@ -579,7 +593,7 @@ class MainWindow(QMainWindow):
         elif p.limit_source == "custom":
             bits.append("your custom profile")
         self.profile_label.setText(" · ".join(bits))
-        self.profile_label.setToolTip(p.notes)
+        self.profile_label.setToolTip(_tip(p.notes))
         self.fix_panel.set_profile(p)
         self.schedule_recompute()
 
@@ -599,7 +613,7 @@ class MainWindow(QMainWindow):
                     return False
                 script = model.load(path, repair=True)
         except (OSError, ValueError) as e:
-            QMessageBox.critical(self, "Can't open this file", str(e))
+            _alert(self, QMessageBox.Critical, "Can't open this file", str(e))
             return False
         self.script = script
         self._fresh_load = True
@@ -608,9 +622,9 @@ class MainWindow(QMainWindow):
         axis = "" if script.axis == "L0" else (
             f" · <span style='color:{OK}'>⚠ {script.axis} axis: this app is built for single-axis (stroke) "
             f"scripts only</span>")
-        self.file_label.setText(f"<b>{p.name}</b> &nbsp;<span style='color:#888'>{_ts(script.duration_ms)[:5]} · "
+        self.file_label.setText(f"<b>{escape(p.name)}</b> &nbsp;<span style='color:#888'>{_ts(script.duration_ms)[:5]} · "
                                 f"{len(script.actions):,} actions{axis}</span>")
-        self.file_label.setToolTip(str(p))
+        self.file_label.setToolTip(_tip(str(p)))
         self.setWindowTitle(f"{p.name} – Script Safety Manager")
         self.pages.setCurrentIndex(1)
         self.recompute()
@@ -640,7 +654,7 @@ class MainWindow(QMainWindow):
             opts = self.options.options()
             result = apply(self.script, profile, opts)
         except (ValueError, TypeError) as e:
-            self.verdict_label.setText(f"<span style='color:{BAD}'>These settings don't work: {e}</span>")
+            self.verdict_label.setText(f"<span style='color:{BAD}'>These settings don't work: {escape(str(e))}</span>")
             self.save_button.setEnabled(False)
             return
         self.result = result
@@ -661,10 +675,10 @@ class MainWindow(QMainWindow):
         self.badge_before.set_score(self.report_before.score)
         self.badge_after.set_score(self.report_after.score)
         if before == 0:
-            head = f"<span style='color:{GOOD}'>✓ This script already plays well on {profile.name}.</span>"
+            head = f"<span style='color:{GOOD}'>✓ This script already plays well on {escape(profile.name)}.</span>"
         elif after == 0:
             head = (f"<span style='color:{GOOD}'>✓ Fixed: all {before} problem(s) solved for "
-                    f"{profile.name}.</span>")
+                    f"{escape(profile.name)}.</span>")
         else:
             head = (f"<span style='color:{OK}'>{before - after} of {before} problem(s) fixed, {after} left.</span> "
                     f"<span style='color:#888'>Turn on more fixes on the right, or check the list.</span>")
@@ -682,7 +696,7 @@ class MainWindow(QMainWindow):
         out = self.output_path()
         self.save_button.setEnabled(True)
         self.save_button.setText("Save safe copy" if opts.is_safe else "Save modified copy")
-        self.output_label.setText(f"Saves as {out.name}" if out else "")
+        self.output_label.setText(f"<span>Saves as {escape(out.name)}</span>" if out else "")
 
     def jump_to(self, kind: str) -> None:
         """Zoom to the next occurrence of this problem (original first, else what's left after fixing)."""
@@ -716,10 +730,10 @@ class MainWindow(QMainWindow):
         return self.repair_box(err).exec() == QMessageBox.Yes
 
     def repair_box(self, err: model.BrokenActionsError) -> QMessageBox:
-        lines = "".join(f"<li>action #{b.index + 1}: {b.reason}</li>" for b in err.broken[:8])
+        lines = "".join(f"<li>action #{b.index + 1}: {escape(b.reason)}</li>" for b in err.broken[:8])
         more = f"<li>… and {len(err.broken) - 8} more</li>" if len(err.broken) > 8 else ""
         box = QMessageBox(QMessageBox.Warning, "Broken actions found",
-                          f"<b>{err.path.name}</b> has <b>{len(err.broken)} broken action(s)</b> out of "
+                          f"<b>{escape(err.path.name)}</b> has <b>{len(err.broken)} broken action(s)</b> out of "
                           f"{err.total}:<ul>{lines}{more}</ul>"
                           "Remove them and continue? The rest of the script is checked as usual, and the "
                           "saved copy records what was removed. The original file is not changed.", parent=self)
@@ -729,8 +743,11 @@ class MainWindow(QMainWindow):
         return box
 
     def confirm_overwrite(self, dest: Path) -> bool:
-        return QMessageBox.question(self, "Replace file?", f"{dest.name} already exists. Replace it?",
-                                    QMessageBox.Yes | QMessageBox.No, QMessageBox.No) == QMessageBox.Yes
+        box = QMessageBox(QMessageBox.Question, "Replace file?", f"{dest.name} already exists. Replace it?",
+                          QMessageBox.Yes | QMessageBox.No, self)
+        box.setTextFormat(Qt.PlainText)
+        box.setDefaultButton(QMessageBox.No)
+        return box.exec() == QMessageBox.Yes
 
     def save(self) -> Path | None:
         if self._timer.isActive():   # flush a pending option change so we save what's on screen
@@ -740,15 +757,15 @@ class MainWindow(QMainWindow):
         dest = self.output_path()
         src = self.script.path
         if dest is None or dest.resolve() == src.resolve():
-            QMessageBox.critical(self, "Save", "Refusing to overwrite the original script.")
+            _alert(self, QMessageBox.Critical, "Save", "Refusing to overwrite the original script.")
             return None
         if dest.exists() and not self.confirm_overwrite(dest):
             return None
         try:
             model.save(self.result.script, dest)
         except OSError as e:
-            QMessageBox.critical(self, "Save failed", str(e))
+            _alert(self, QMessageBox.Critical, "Save failed", str(e))
             return None
-        self.output_label.setText(f"<span style='color:{GOOD}'>✓ Saved {dest.name}</span>")
+        self.output_label.setText(f"<span style='color:{GOOD}'>✓ Saved {escape(dest.name)}</span>")
         self.statusBar().showMessage(f"Saved to {dest}", 10000)
         return dest

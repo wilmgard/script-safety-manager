@@ -6,6 +6,11 @@ import math
 from dataclasses import dataclass, field
 from pathlib import Path
 
+# Hard limits for untrusted files. Real funscripts are a few MB and at most a few hours long; anything
+# beyond this is either broken or built to exhaust memory.
+MAX_FILE_BYTES = 50 * 1024 * 1024
+MAX_TIME_MS = 24 * 60 * 60 * 1000
+
 # Known multi-axis suffixes, e.g. "video.roll.funscript" -> "roll".
 AXIS_SUFFIXES = {
     "surge", "sway", "twist", "roll", "pitch", "vib", "pump", "valve", "suck", "lube",
@@ -98,6 +103,8 @@ def _check_action(a) -> tuple[Action | None, str]:
         return None, f"position is not a usable number: {a['pos']!r}"[:80]
     if at < 0:
         return None, f"negative time: {at:g} ms"
+    if at > MAX_TIME_MS:
+        return None, f"time beyond 24 hours: {at:g} ms"
     return Action(int(at), pos), ""
 
 
@@ -111,6 +118,10 @@ def load(path: str | Path, repair: bool = False) -> Funscript:
     the sanitize step fixes them.
     """
     path = Path(path)
+    size = path.stat().st_size
+    if size > MAX_FILE_BYTES:
+        raise ValueError(f"{path.name}: {size / 1e6:.0f} MB is far larger than any real funscript "
+                         f"(limit {MAX_FILE_BYTES // (1024 * 1024)} MB)")
     try:
         with open(path, encoding="utf-8-sig") as f:
             data = json.load(f)
