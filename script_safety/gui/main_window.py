@@ -212,14 +212,14 @@ class FixPanel(QGroupBox):
 
         self.speed = check("speed_limit", "Cap the speed at",
                            "Shortens strokes that are faster than the cap. On devices without a firmware limit "
-                           "(OSR2 / SR6 / SSR1) this cap is the only thing protecting you.")
+                           "(such as many homebrew devices) this cap is the only thing protecting you.")
         self.profile_max = 500.0
         self.cap = QSpinBox()
         self.cap.setRange(50, 2000)
         self.cap.setSingleStep(10)
         self.cap.setSuffix(" units/s")
         self.cap.setKeyboardTracking(False)
-        self.cap.setToolTip("Your own speed limit. The default for OSR2 / SR6 / SSR1 matches the Handy (online), "
+        self.cap.setToolTip("Your own speed limit. The default for homebrew devices matches the Handy (online), "
                             "whose 500 units/s limit is well tested. Lower is gentler.")
         self.cap.valueChanged.connect(self._cap_changed)
         self.profile_mode = "preserve_anchor"
@@ -592,7 +592,12 @@ class MainWindow(QMainWindow):
 
     def load_file(self, path: str | Path) -> bool:
         try:
-            script = model.load(path)
+            try:
+                script = model.load(path)
+            except model.BrokenActionsError as e:
+                if not self.confirm_repair(e):
+                    return False
+                script = model.load(path, repair=True)
         except (OSError, ValueError) as e:
             QMessageBox.critical(self, "Can't open this file", str(e))
             return False
@@ -668,6 +673,8 @@ class MainWindow(QMainWindow):
         if result.added:
             changes.append(f"{result.added:,} added")
         line = "Changes: " + ", ".join(changes) + "."
+        if self.script.repairs:
+            line = f"Repaired: {len(self.script.repairs)} broken action(s) removed when opening. " + line
         if result.new_turns:
             line += f" Note: {len(result.new_turns)} stroke(s) now turn at a different point than the script."
         self.counts_label.setText(line)
@@ -703,6 +710,23 @@ class MainWindow(QMainWindow):
             return None
         suffix = cli.SAFE_SUFFIX if self.options.options().is_safe else cli.MODIFIED_SUFFIX
         return cli._output_path(self.script.path, None, suffix)
+
+    def confirm_repair(self, err: model.BrokenActionsError) -> bool:
+        """Broken actions found: show which, and ask before removing them."""
+        return self.repair_box(err).exec() == QMessageBox.Yes
+
+    def repair_box(self, err: model.BrokenActionsError) -> QMessageBox:
+        lines = "".join(f"<li>action #{b.index + 1}: {b.reason}</li>" for b in err.broken[:8])
+        more = f"<li>… and {len(err.broken) - 8} more</li>" if len(err.broken) > 8 else ""
+        box = QMessageBox(QMessageBox.Warning, "Broken actions found",
+                          f"<b>{err.path.name}</b> has <b>{len(err.broken)} broken action(s)</b> out of "
+                          f"{err.total}:<ul>{lines}{more}</ul>"
+                          "Remove them and continue? The rest of the script is checked as usual, and the "
+                          "saved copy records what was removed. The original file is not changed.", parent=self)
+        box.setStandardButtons(QMessageBox.Yes | QMessageBox.Cancel)
+        box.button(QMessageBox.Yes).setText("Remove and continue")
+        box.setDefaultButton(QMessageBox.Yes)
+        return box
 
     def confirm_overwrite(self, dest: Path) -> bool:
         return QMessageBox.question(self, "Replace file?", f"{dest.name} already exists. Replace it?",

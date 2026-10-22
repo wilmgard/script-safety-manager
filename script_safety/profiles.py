@@ -86,25 +86,25 @@ BUILTIN: dict[str, DeviceProfile] = {p.key: p for p in [
         notes="Observed: skips actions at high frequency, micro-stutters after every point (so curves are "
               "simplified to fewer, spaced points), moves faster than online mode. Numbers are placeholders."),
     DeviceProfile(
-        "homebrew", "Homebrew device (no firmware limit)",
+        "homebrew_1", "Homebrew device 1",
         max_speed=500, min_interval_ms=20, vibration_ok=False, thin_interpolation=False, limit_source="handy_matched",
         speed_limit_mode="shorten_center",
-        notes="For untested and homebrew devices that play every move as fast as their motor can go. The cap is a "
-              "self-chosen safety layer matched to the well-tested Handy (online); set your own in the app."),
+        notes="Untested or homebrew device with no firmware speed limit: plays every move as fast as its motor "
+              "can go. The cap is a self-chosen safety layer matched to the well-tested Handy (online); set your "
+              "own in the app."),
     DeviceProfile(
-        "osr", "OSR2 / SR6",
+        "homebrew_2", "Homebrew device 2",
         max_speed=500, min_interval_ms=20, vibration_ok=False, thin_interpolation=False, limit_source="handy_matched",
         speed_limit_mode="shorten_center",
-        notes="No firmware speed limit: plays every move at full servo speed. The cap is a self-chosen safety "
-              "layer matched to the well-tested Handy (online); set your own in the app. Vibrations weaker "
-              "than on other devices. Interpolation fine."),
+        notes="Homebrew device with no firmware speed limit, where vibrations play weaker than on other "
+              "devices. The cap is a self-chosen safety layer matched to the well-tested Handy (online); set "
+              "your own in the app."),
     DeviceProfile(
-        "ssr1", "SSR1",
+        "homebrew_3", "Homebrew device 3",
         max_speed=500, min_interval_ms=20, vibration_ok=True, thin_interpolation=False, limit_source="handy_matched",
         speed_limit_mode="shorten_center",
-        notes="No firmware speed limit: plays every move at full motor speed. The cap is a self-chosen safety "
-              "layer matched to the well-tested Handy (online); set your own in the app. Vibrations and "
-              "interpolation reported fine."),
+        notes="Homebrew device with no firmware speed limit, where vibrations play well. The cap is a "
+              "self-chosen safety layer matched to the well-tested Handy (online); set your own in the app."),
     DeviceProfile(
         "launch", "Kiiroo Launch",
         max_speed=400, min_interval_ms=100, vibration_ok=False, thin_interpolation=True,

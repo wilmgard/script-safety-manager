@@ -67,9 +67,9 @@ def test_simple_flow(app, tmp_path):
     assert "intensity_cap" in [n for n, _ in win.result.steps]
 
     # The slow-stroke fix only shows for devices that need it
-    win.set_profile("osr")
+    win.set_profile("homebrew_2")
     assert win.fix_panel.slow.isHidden()
-    # OSR's own limiter is shown as its default, and choosing "keep bottoms" really switches the limiter
+    # The device's own limiter is shown as its default, and choosing "keep bottoms" really switches the limiter
     assert win.fix_panel.anchor.currentData() == ("shorten_center", None)
     win.fix_panel.anchor.setCurrentIndex(0)
     assert win.options.options().speed_mode == "preserve_anchor"
@@ -94,7 +94,7 @@ def test_speed_cap_is_user_defined(app, tmp_path):
     src = tmp_path / STRESS.name
     shutil.copy(STRESS, src)
     win = MainWindow()
-    win.set_profile("osr")
+    win.set_profile("homebrew_2")
     assert win.load_file(src)
     assert win.fix_panel.cap.value() == 500            # matched to the Handy by default
     assert "matched to the Handy" in win.profile_label.text()
@@ -113,4 +113,21 @@ def test_multi_axis_file_warns(app, tmp_path):
     win = MainWindow()
     assert win.load_file(src)
     assert "single-axis" in win.file_label.text()
+    win.close()
+
+
+def test_repair_on_open_asks_first(app, tmp_path):
+    f = tmp_path / "broken.funscript"
+    f.write_text('{"actions":[{"at":0,"pos":0},{"at":500,"pos":NaN},{"at":1000,"pos":100},{"at":2000,"pos":0}]}')
+    win = MainWindow()
+    asked = []
+    win.confirm_repair = lambda err: asked.append(err) or False     # user clicks Cancel
+    assert not win.load_file(f) and win.script is None
+    win.confirm_repair = lambda err: asked.append(err) or True      # user clicks "Remove and continue"
+    assert win.load_file(f)
+    assert len(asked) == 2 and asked[0].broken[0].index == 1
+    assert len(win.script.actions) == 3
+    assert "1 broken action(s) removed" in win.counts_label.text()
+    dest = win.save()
+    assert model.load(dest).raw["metadata"]["safety_manager"]["repaired"]["broken_actions_removed"] == 1
     win.close()

@@ -33,6 +33,18 @@ def _collect(paths: list[str], skip_outputs: bool = True) -> list[Path]:
     return files
 
 
+def _load(path: Path, repair: bool) -> model.Funscript:
+    try:
+        script = model.load(path, repair=repair)
+    except model.BrokenActionsError as e:
+        raise ValueError(f"{e}. Re-run with --repair to remove them.") from e
+    if script.repairs:
+        print(f"{path.name}: removed {len(script.repairs)} broken action(s): "
+              + "; ".join(f"#{b.index + 1} {b.reason}" for b in script.repairs[:5])
+              + (" ..." if len(script.repairs) > 5 else ""), file=sys.stderr)
+    return script
+
+
 def _output_path(src: Path, out_dir: Path | None, suffix: str = SAFE_SUFFIX) -> Path:
     """video.funscript -> video.safe.funscript; video.roll.funscript -> video.safe.roll.funscript,
     so multi-axis players still pick up the axis suffix."""
@@ -79,7 +91,7 @@ def cmd_analyze(args) -> int:
     profile = get_profile(args.profile)
     reports = []
     for path in _collect(args.paths, skip_outputs=False):
-        rep = analyze(model.load(path), profile)
+        rep = analyze(_load(path, args.repair), profile)
         if args.json:
             reports.append({"file": str(path), **rep.to_dict()})
         else:
@@ -108,7 +120,7 @@ def cmd_fix(args) -> int:
     if out_dir:
         out_dir.mkdir(parents=True, exist_ok=True)
     for path in _collect(args.paths):
-        script = model.load(path)
+        script = _load(path, args.repair)
         result = apply(script, profile, opts)
         dest = _output_path(path, out_dir, SAFE_SUFFIX if opts.is_safe else MODIFIED_SUFFIX)
         if dest.resolve() == path.resolve():
@@ -141,6 +153,8 @@ def build_parser() -> argparse.ArgumentParser:
     def common(p):
         p.add_argument("paths", nargs="+", help="funscript files or folders")
         p.add_argument("-p", "--profile", default="generic", help="profile key or path to a profile .json")
+        p.add_argument("--repair", action="store_true",
+                       help="drop broken actions (missing/non-numeric values, NaN, negative times) instead of refusing")
 
     a = sub.add_parser("analyze", help="report problems without changing anything")
     common(a)

@@ -137,4 +137,9 @@ def apply(script: Funscript, profile: DeviceProfile, opts: FixOptions | None = N
         "actions_added": added,
         "new_turns": len(new_turns),
     }
+    if script.repairs:   # broken actions dropped when the file was opened
+        meta["safety_manager"]["repaired"] = {
+            "broken_actions_removed": len(script.repairs),
+            "details": [f"#{b.index + 1}: {b.reason}" for b in script.repairs[:100]],
+        }
     return FixResult(out, steps, removed, moved, added, new_turns)

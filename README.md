@@ -30,9 +30,15 @@ How devices react to extreme scripts, from community discussions on EroScripts (
 
 Other tools already help with this while *making* scripts, such as the [StrokeLimit extension for OpenFunscripter](https://discuss.eroscripts.com/t/ofs-extension-strokelimit-easily-set-max-stroke-speeds/341104) and the limiter on [funscript.io](https://beta.funscript.io/app/modify). This app is for the other side: **checking scripts you downloaded**, before you play them.
 
-## Install and start
+## Download and start
 
-Requires Python 3.10 or newer (developed on 3.14) on Windows.
+**Windows, no Python needed:** download `ScriptSafetyManager.exe` from the [latest release](https://github.com/wilmgard/script-safety-manager/releases/latest) and double-click it. It's a single file with nothing to install: keep it anywhere, and delete it to remove it.
+
+- Windows may show **"Windows protected your PC"** the first time, because the exe isn't code-signed. Click **More info › Run anyway**.
+- The first start takes a few seconds while it unpacks.
+- You can also drag a `.funscript` onto the exe to open it directly.
+
+**From source** (any OS with Python 3.10 or newer; developed on 3.14):
 
 ```bash
 git clone https://github.com/wilmgard/script-safety-manager.git
@@ -41,13 +47,11 @@ pip install -r requirements.txt
 python -m script_safety.gui
 ```
 
-You can also open a script directly: `python -m script_safety.gui "path/to/video.funscript"`.
-
 ## Using the app
 
 ![Start screen](docs/images/01_start.png)
 
-1. **Open a script.** Drag a `.funscript` onto the window, or click **Open script…**.
+1. **Open a script.** Drag a `.funscript` onto the window, or click **Open script…**. If some actions in the file are broken, you're asked first (see [Broken scripts](#broken-scripts)).
 2. **Choose your device** in the top-right dropdown. The line under it says what that device does with extreme moves, and whether its numbers are estimates.
 3. **Read the verdict.** The two scores are how well the original plays on that device and how well the fixed copy will (0–100). The sentence beside them says how many problems were found and fixed.
 4. **Look at the graph.**
@@ -70,7 +74,7 @@ These screenshots use `Stroker_Stress_Test.funscript`, the community stress-test
 
 ### Too fast for this device: the main risk on devices without a firmware limit
 
-With the homebrew profile, the stress test has **371 places** where moves exceed the 500 units/s cap, peaking at **17,000 units/s** (the bottom-left status line shows the peak). A device without a firmware limit would try to play every red segment at full speed. The blue line is the fixed copy: the same shape, never faster than the cap. After fixing: **0** too-fast moves.
+With **Homebrew device 1**, the stress test has **371 places** where moves exceed the 500 units/s cap, peaking at **17,000 units/s** (the bottom-left status line shows the peak). A device without a firmware limit would try to play every red segment at full speed. The blue line is the fixed copy: the same shape, never faster than the cap. After fixing: **0** too-fast moves.
 
 ![Too-fast moves, before (grey and red) and after (blue)](docs/images/03_homebrew_too_fast.png)
 
@@ -96,7 +100,7 @@ The Handy's firmware re-times strokes slower than about 33 units/s, so downstrok
 
 ### Everything on: all problems solved
 
-With every fix switched on, including **Tone down long, intense sections**, the stress test goes from **0 to 100** on every device profile. All 486 problems are solved with the homebrew profile.
+With every fix switched on, including **Tone down long, intense sections**, the stress test goes from **0 to 100** on every device profile. All 486 problems are solved for Homebrew device 1.
 
 ![All problems solved](docs/images/08_homebrew_all_fixed.png)
 
@@ -116,8 +120,20 @@ With every fix switched on, including **Tone down long, intense sections**, the 
 | **Device would play it off the beat** | (Handy online) the firmware's limiter would make strokes turn where the script doesn't | Keep bottoms (or tops) on the beat |
 | **Too slow: device would shift the timing** | (Handy online) the firmware would re-time these strokes | Fix strokes too slow for this device |
 | **Long, very intense section** | High average speed for 30 s or more: motor heat and fatigue, most relevant on devices that never slow down by themselves | Tone down long, intense sections (optional) |
-| **File problem: …** | Positions outside 0–100, actions out of order, duplicate times. Files with unreadable values are refused when opening | Always cleaned up; saved positions are always kept within 0–100 |
+| **File problem: …** | Positions outside 0–100, actions out of order, duplicate times | Always cleaned up; saved positions are always kept within 0–100 |
+| **Broken actions** (asked when opening) | Missing or unreadable times or positions, `NaN`, negative times | Removed after you confirm (see [Broken scripts](#broken-scripts)) |
 | **Vibration bursts (note)**, **Sharp direction changes (note)** | Not dangerous, just how the device will play them | None needed (options under Advanced) |
+
+## Broken scripts
+
+Untested scripts sometimes contain actions that can't be played at all: a missing time or position, text instead of a number, `NaN` or `Infinity`, or a negative time. When you open such a file, the app lists the broken actions and asks before doing anything:
+
+![The app lists the broken actions and asks before removing them](docs/images/10_repair_prompt.png)
+
+- **Remove and continue** drops exactly those actions, and checks the rest of the script as usual. The saved safe copy records what was removed (in its metadata), and the original file stays untouched.
+- **Cancel** leaves the file closed.
+- Positions written as text, such as `"50"`, are simply read as numbers.
+- A file that isn't valid JSON at all, for example cut off half-way through a download, is still refused. Guessing at a damaged file could invent moves the author never wrote.
 
 ## Recommended use for untested scripts
 
@@ -134,7 +150,9 @@ If your device doesn't limit itself, check every untested script, even ones that
 |---|---|---|
 | The Handy (online/WiFi) | 500 u/s | Its own firmware limit, observed by forum members (also its ~33 u/s slow limit) |
 | The Handy (Bluetooth) | 550 u/s | Estimate |
-| Homebrew device (no firmware limit) | 500 u/s | **Self-defined safety cap**, matched to the Handy |
+| Homebrew device 1 | 500 u/s | **Self-defined safety cap**, matched to the Handy. For any device without a firmware limit |
+| Homebrew device 2 | 500 u/s | Same cap; for devices where vibrations play weaker |
+| Homebrew device 3 | 500 u/s | Same cap; for devices where vibrations play well |
 | Kiiroo Launch / Keon, Vorze A10 Piston | 350–400 u/s | Estimates |
 | Generic / conservative | 400 u/s | For unknown hardware |
 
@@ -144,7 +162,7 @@ Devices without a firmware limit have no "real" number to measure that would mak
 
 ```json
 {
-  "base": "homebrew",
+  "base": "homebrew_1",
   "name": "My device (gentle)",
   "max_speed": 300,
   "min_interval_ms": 30
@@ -162,23 +180,24 @@ This app is for **single-axis (stroke) scripts**. Multi-axis files (`.roll`, `.t
 - **Research:** collected how the Handy (online and Bluetooth) and homebrew devices handle too-fast, too-slow and dense scripts from the EroScripts discussions, and compared with existing tools (StrokeLimit for OFS and funscript.io help while making scripts; neither checks a downloaded script for a specific device).
 - **Checks:** too fast, too close together, hard starts and restarts, off-beat (by simulating the Handy firmware), too slow for the Handy, long intense sections, vibration bursts, sharp direction changes, and file problems. Each comes with a 0–100 score per device.
 - **Fixes:** a speed cap with three shortening methods, including keeping bottoms or tops on the beat; merging close actions; ease-in; slow-stroke fix for the Handy; curve simplification for the Handy over Bluetooth; stroke range and invert; intensity cap.
-- **Device profiles** for the Handy (online and Bluetooth), homebrew devices (with a self-defined, Handy-matched cap), Launch, Keon, A10 Piston, a generic profile, and your own custom profiles.
+- **Device profiles** for the Handy (online and Bluetooth), Homebrew devices 1–3 (with a self-defined, Handy-matched cap), Launch, Keon, A10 Piston, a generic profile, and your own custom profiles.
 - **Security hardening:**
-  - broken or hostile files are refused;
+  - damaged or hostile files are refused, and broken actions are only removed after you confirm;
   - bad profile values are rejected;
   - saved positions are always within 0–100;
   - the original file is never overwritten;
   - nothing is sent over the network;
   - saved files record what was changed, but no personal information.
 - **Desktop app:** the one-screen workflow above, with your own speed cap, tested on Windows with the stress-test script.
-- **Tests:** 54 automated tests, including hostile inputs, the cases from the threads, and a check that every device profile reaches zero problems on the stress test with all fixes on.
+- **Repair on open:** broken actions are listed and removed with your OK, instead of the file being refused.
+- **Windows app:** a single `ScriptSafetyManager.exe` that runs without Python. Every build checks itself on the stress test before it's released.
+- **Tests:** 60 automated tests, including hostile inputs, the cases from the threads, and a check that every device profile reaches zero problems on the stress test with all fixes on.
 
 ## What's next
 
-1. **Windows installer:** a single `.exe`, so users don't need Python.
-2. **Batch mode in the app:** check and fix a whole folder at once, with a summary of which scripts are unsafe.
-3. **Profile editor in the app**, and an easy way to share profiles.
-4. **Follow Handy firmware changes:** the Handy's official [firmware change logs](https://intercom.help/ohdoki/en/collections/10608301-change-logs) list each release. Add the firmware version a Handy profile was based on, and update its limits when a release changes them.
+1. **Batch mode in the app:** check and fix a whole folder at once, with a summary of which scripts are unsafe.
+2. **Profile editor in the app**, and an easy way to share profiles.
+3. **Follow Handy firmware changes:** the Handy's official [firmware change logs](https://intercom.help/ohdoki/en/collections/10608301-change-logs) list each release. Add the firmware version a Handy profile was based on, and update its limits when a release changes them.
 
 Not planned: multi-axis scripts (see [Scope](#scope)), measuring homebrew device limits (the cap is self-defined), video preview and live device preview.
 
@@ -188,4 +207,8 @@ This app lowers the risk from badly made scripts, but it can't know your device'
 
 ## For developers
 
-Run the tests with `python -m pytest -q`. The safety logic lives in `script_safety/` (`analysis.py` checks, `fixers.py` fixes, `pipeline.py` order and options, `profiles.py` devices). The app in `script_safety/gui/` only displays it. The same logic is also available from the command line: `python -m script_safety -h`.
+Run the tests with `python -m pytest -q`.
+
+Build the Windows exe with `pip install -r requirements.txt -r requirements-build.txt`, then `python packaging/build_exe.py`. The script builds `dist/ScriptSafetyManager.exe` with PyInstaller. It then runs the exe's built-in self-test (`ScriptSafetyManager.exe --self-test <script>`), which opens the stress test, fixes it, saves it and checks the saved copy scores 100. The build only counts as done if that passes.
+
+ The safety logic lives in `script_safety/` (`analysis.py` checks, `fixers.py` fixes, `pipeline.py` order and options, `profiles.py` devices). The app in `script_safety/gui/` only displays it. The same logic is also available from the command line: `python -m script_safety -h`.

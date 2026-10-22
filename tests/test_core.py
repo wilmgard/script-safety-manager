@@ -144,7 +144,7 @@ def test_pipeline_makes_stress_test_safe_for_every_profile():
 
 def test_custom_profile_file(tmp_path):
     f = tmp_path / "mydevice.json"
-    f.write_text(json.dumps({"base": "osr", "max_speed": 333}))
+    f.write_text(json.dumps({"base": "homebrew_2", "max_speed": 333}))
     p = load_profile_file(f)
     assert p.key == "mydevice" and p.max_speed == 333 and p.speed_limit_mode == "shorten_center"
     assert not p.verified
@@ -275,10 +275,10 @@ def test_slow_fix_move_then_hold_and_small_moves():
 def test_slow_strokes_flagged_only_for_retiming_devices():
     s = Funscript(acts((0, 0), (5000, 100)))
     assert analyze(s, BUILTIN["handy_online"]).counts().get("slow_retime")
-    assert not analyze(s, BUILTIN["osr"]).counts().get("slow_retime")
+    assert not analyze(s, BUILTIN["homebrew_2"]).counts().get("slow_retime")
     res = apply(s, BUILTIN["handy_online"], FixOptions(soft_start=False))
     assert not analyze(res.script, BUILTIN["handy_online"]).counts().get("slow_retime")
-    assert [a.pos for a in apply(s, BUILTIN["osr"], FixOptions(soft_start=False)).script.actions] == [0, 100]
+    assert [a.pos for a in apply(s, BUILTIN["homebrew_2"], FixOptions(soft_start=False)).script.actions] == [0, 100]
 
 
 # --- spaced simplification for Handy BLE ---------------------------------------
@@ -304,3 +304,53 @@ def test_all_fixes_on_leave_no_problems_on_stress_test():
         res = apply(s, p, FixOptions(intensity_cap=True))
         left = [f.kind for f in analyze(res.script, p).findings if f.severity != "info"]
         assert left == [], (p.key, left)
+
+
+# --- repair broken scripts on open ----------------------------------------------
+
+BROKEN = ('{"version":"1.0","actions":[{"at":0,"pos":10},{"at":100,"pos":NaN},{"at":200,"pos":"90"},'
+          '{"pos":50},{"at":-5,"pos":20},{"at":"soon","pos":30},{"at":400,"pos":Infinity},[1,2],'
+          '{"at":500,"pos":true},{"at":600,"pos":0}]}')
+
+
+def test_broken_actions_are_listed_not_silently_dropped(tmp_path):
+    f = tmp_path / "broken.funscript"
+    f.write_text(BROKEN)
+    with pytest.raises(model.BrokenActionsError) as e:
+        model.load(f)
+    assert e.value.total == 10
+    assert [b.index for b in e.value.broken] == [1, 3, 4, 5, 6, 7, 8]
+    reasons = " | ".join(b.reason for b in e.value.broken)
+    assert "missing time" in reasons and "negative time" in reasons and "not an action object" in reasons
+
+
+def test_repair_keeps_good_actions_and_numeric_text(tmp_path):
+    f = tmp_path / "broken.funscript"
+    f.write_text(BROKEN)
+    s = model.load(f, repair=True)
+    assert [(a.at, a.pos) for a in s.actions] == [(0, 10), (200, 90), (600, 0)]
+    assert len(s.repairs) == 7
+    res = apply(s, BUILTIN["generic"], FixOptions(soft_start=False))
+    rep = res.script.raw["metadata"]["safety_manager"]["repaired"]
+    assert rep["broken_actions_removed"] == 7 and rep["details"][0].startswith("#2:")
+
+
+@pytest.mark.parametrize("body,msg", [
+    ('{"actions":[{"at":0,"pos":10},{"at":100,', "not valid JSON"),        # cut off
+    ('{"actions":[{"at":"x","pos":1},{"pos":2}]}', "none of the"),           # nothing usable
+], ids=["truncated", "all_broken"])
+def test_unrepairable_files_still_refused(tmp_path, body, msg):
+    f = tmp_path / "bad.funscript"
+    f.write_text(body)
+    with pytest.raises(ValueError, match=msg):
+        model.load(f, repair=True)
+
+
+def test_cli_repair_flag(tmp_path, capsys):
+    f = tmp_path / "broken.funscript"
+    f.write_text(BROKEN)
+    assert main(["fix", str(f)]) == 1
+    assert "--repair" in capsys.readouterr().err
+    assert main(["fix", str(f), "--repair"]) == 0
+    assert "removed 7 broken action(s)" in capsys.readouterr().err
+    assert (tmp_path / "broken.safe.funscript").exists()
