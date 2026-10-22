@@ -131,3 +131,13 @@ def test_repair_on_open_asks_first(app, tmp_path):
     dest = win.save()
     assert model.load(dest).raw["metadata"]["safety_manager"]["repaired"]["broken_actions_removed"] == 1
     win.close()
+
+
+def test_dropdown_lists_homebrew_and_named_devices(app):
+    win = MainWindow()
+    names = [win.profile_combo.itemText(i) for i in range(win.profile_combo.count())]
+    for name in ("Homebrew device 1", "Homebrew device 2", "Homebrew device 3", "OSR2 / SR6", "SSR1"):
+        assert name in names
+    win.set_profile("osr")
+    assert win.fix_panel.cap.value() == 500 and "matched to the Handy" in win.profile_label.text()
+    win.close()

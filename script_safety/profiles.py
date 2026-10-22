@@ -106,6 +106,20 @@ BUILTIN: dict[str, DeviceProfile] = {p.key: p for p in [
         notes="Homebrew device with no firmware speed limit, where vibrations play well. The cap is a "
               "self-chosen safety layer matched to the well-tested Handy (online); set your own in the app."),
     DeviceProfile(
+        "osr", "OSR2 / SR6",
+        max_speed=500, min_interval_ms=20, vibration_ok=False, thin_interpolation=False, limit_source="handy_matched",
+        speed_limit_mode="shorten_center",
+        notes="No firmware speed limit: plays every move at full servo speed. The cap is a self-chosen safety "
+              "layer matched to the well-tested Handy (online); set your own in the app. Vibrations weaker "
+              "than on other devices. Interpolation fine."),
+    DeviceProfile(
+        "ssr1", "SSR1",
+        max_speed=500, min_interval_ms=20, vibration_ok=True, thin_interpolation=False, limit_source="handy_matched",
+        speed_limit_mode="shorten_center",
+        notes="No firmware speed limit: plays every move at full motor speed. The cap is a self-chosen safety "
+              "layer matched to the well-tested Handy (online); set your own in the app. Vibrations and "
+              "interpolation reported fine."),
+    DeviceProfile(
         "launch", "Kiiroo Launch",
         max_speed=400, min_interval_ms=100, vibration_ok=False, thin_interpolation=True,
         notes="Unmeasured placeholder."),
