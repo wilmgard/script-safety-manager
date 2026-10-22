@@ -29,8 +29,15 @@ def _self_test(win, path: Path) -> int:
         score = analyze(fixed, win.profile).score
         before = win.report_before.score
         assert score == 100, f"fixed copy scored {score}, expected 100"
+
+        from .batch_window import BatchWindow   # batch mode: the folder holds the script (+ its safe copy)
+        bw = BatchWindow(win.profile, win.options.options(), {})
+        assert bw.start(path.parent), "batch check did not start"
+        bw.wait()
+        assert [i.path.name for i in bw.items] == [path.name], f"batch saw {[i.path.name for i in bw.items]}"
+        assert bw.items[0].status == "problems", f"batch status {bw.items[0].status}"
         report.write_text(f"self-test OK: {path.name} score {before} -> {score}, saved {dest.name} "
-                          f"({len(fixed.actions)} actions)\n", encoding="utf-8")
+                          f"({len(fixed.actions)} actions); batch: {bw.summary.text()}\n", encoding="utf-8")
         return 0
     except Exception:
         report.write_text("self-test FAILED\n" + traceback.format_exc(), encoding="utf-8")

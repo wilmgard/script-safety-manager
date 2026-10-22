@@ -68,6 +68,24 @@ python -m script_safety.gui
 
 **Advanced settings…** (bottom left) has every option, the full list of problems with exact times, and a log of what was changed.
 
+## Checking a whole folder
+
+Click **Check a folder…** (top left) to check every script in a folder at once, for the device and fixes chosen in the main window.
+
+![Batch mode: every script in a folder, worst first](docs/images/11_batch.png)
+
+1. **Choose folder…** Subfolders are included unless you untick **Include subfolders**. Safe copies made earlier (`.safe.funscript`) are not checked again.
+2. The scripts are checked in the background (a progress bar and **Stop** button show while it runs), then listed **worst first**:
+   - **Can't open**: the file is damaged, for example cut off half-way through a download.
+   - **Broken actions**: some actions can't be played. Double-click to open the script and review them, or tick **Remove broken actions** and click **Check again**.
+   - **Problems**: the score before and after fixing, the most common problem, and how many are left after fixing.
+   - **OK**: plays well as it is.
+   - **Skipped**: multi-axis files (see [Scope](#scope)).
+3. **Double-click** any script to open it in the main window and look at it in detail.
+4. **Save safe copies…** writes a safe copy of every script with problems (untick **Only scripts with problems** to include all). Choose **Next to the originals**, or **Another folder…**, where the subfolders are recreated. Existing safe copies are only replaced if you tick **Replace safe copies that already exist**. Originals are never changed.
+
+If you change the device or fixes in the main window while the folder window is open, it says the results are out of date. Click **Check again** to update them.
+
 ## How the checks find the problems from the threads
 
 These screenshots use `Stroker_Stress_Test.funscript`, the community stress-test script included in this repository. It was written to push devices to their limits, so it's a good stand-in for a badly made, untested script.
@@ -137,7 +155,7 @@ Untested scripts sometimes contain actions that can't be played at all: a missin
 
 ## Recommended use for untested scripts
 
-1. Open the script and pick **your** device.
+1. Open the script and pick **your** device. For a whole download folder, use **Check a folder…** first and start with the scripts at the top of the list.
 2. If you see red **Too fast for this device** or **Actions too close together** on a device without a firmware limit, the original would push it to full speed. Don't play the original.
 3. Leave the default fixes on and click **Save safe copy**.
 4. Play the safe copy with the device's own stroke length and speed turned down the first time.
@@ -191,13 +209,13 @@ This app is for **single-axis (stroke) scripts**. Multi-axis files (`.roll`, `.t
 - **Desktop app:** the one-screen workflow above, with your own speed cap, tested on Windows with the stress-test script.
 - **Repair on open:** broken actions are listed and removed with your OK, instead of the file being refused.
 - **Windows app:** a single `ScriptSafetyManager.exe` that runs without Python. Every build checks itself on the stress test before it's released.
-- **Tests:** 60 automated tests, including hostile inputs, the cases from the threads, and a check that every device profile reaches zero problems on the stress test with all fixes on.
+- **Batch mode:** check a whole folder, worst first, open any script from the list, and save safe copies for all of them in one go.
+- **Tests:** 77 automated tests, including hostile inputs, the cases from the threads, and a check that every device profile reaches zero problems on the stress test with all fixes on.
 
 ## What's next
 
-1. **Batch mode in the app:** check and fix a whole folder at once, with a summary of which scripts are unsafe.
-2. **Profile editor in the app**, and an easy way to share profiles.
-3. **Follow Handy firmware changes:** the Handy's official [firmware change logs](https://intercom.help/ohdoki/en/collections/10608301-change-logs) list each release. Add the firmware version a Handy profile was based on, and update its limits when a release changes them.
+1. **Profile editor in the app**, and an easy way to share profiles.
+2. **Follow Handy firmware changes:** the Handy's official [firmware change logs](https://intercom.help/ohdoki/en/collections/10608301-change-logs) list each release. Add the firmware version a Handy profile was based on, and update its limits when a release changes them.
 
 Not planned: multi-axis scripts (see [Scope](#scope)), measuring homebrew device limits (the cap is self-defined), video preview and live device preview.
 
@@ -209,6 +227,6 @@ This app lowers the risk from badly made scripts, but it can't know your device'
 
 Run the tests with `python -m pytest -q`.
 
-Build the Windows exe with `pip install -r requirements.txt -r requirements-build.txt`, then `python packaging/build_exe.py`. The script builds `dist/ScriptSafetyManager.exe` with PyInstaller. It then runs the exe's built-in self-test (`ScriptSafetyManager.exe --self-test <script>`), which opens the stress test, fixes it, saves it and checks the saved copy scores 100. The build only counts as done if that passes.
+Build the Windows exe with `pip install -r requirements.txt -r requirements-build.txt`, then `python packaging/build_exe.py`. The script builds `dist/ScriptSafetyManager.exe` with PyInstaller. It then runs the exe's built-in self-test (`ScriptSafetyManager.exe --self-test <script>`), which opens the stress test, fixes it, saves it, checks the saved copy scores 100, and runs batch mode on its folder. The build only counts as done if that passes.
 
  The safety logic lives in `script_safety/` (`analysis.py` checks, `fixers.py` fixes, `pipeline.py` order and options, `profiles.py` devices). The app in `script_safety/gui/` only displays it. The same logic is also available from the command line: `python -m script_safety -h`.

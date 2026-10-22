@@ -26,6 +26,7 @@ from .. import cli, model
 from ..analysis import Report, analyze
 from ..pipeline import FixResult, apply
 from ..profiles import BUILTIN, DeviceProfile, all_profiles
+from .batch_window import BatchWindow
 from .options_form import OptionsForm
 from .plot import ScriptPlot
 
@@ -383,6 +384,7 @@ class MainWindow(QMainWindow):
         self.profiles: dict[str, DeviceProfile] = {}
         self._fresh_load = False
         self._jump_index: dict[str, int] = {}
+        self.batch_window: BatchWindow | None = None
 
         self._timer = QTimer(self, singleShot=True, interval=DEBOUNCE_MS)
         self._timer.timeout.connect(self.recompute)
@@ -390,6 +392,7 @@ class MainWindow(QMainWindow):
         # Advanced pieces exist up front (the simple panel writes into the options form).
         self.options = OptionsForm()
         self.options.changed.connect(self.schedule_recompute)
+        self.options.changed.connect(self._sync_batch)
         self.table_before = FindingsTable()
         self.table_after = FindingsTable()
         self.steps_list = QListWidget()
@@ -406,6 +409,7 @@ class MainWindow(QMainWindow):
     def _build_menu(self) -> None:
         m = self.menuBar().addMenu("&File")
         for text, shortcut, slot in (("&Open…", QKeySequence.Open, self.open_dialog),
+                                     ("Check a &folder…", None, self.show_batch),
                                      ("&Save safe copy", QKeySequence.Save, self.save),
                                      ("&Advanced…", None, self.show_advanced),
                                      ("&Reload profiles", None, self.reload_profiles),
@@ -431,7 +435,11 @@ class MainWindow(QMainWindow):
         self.profile_combo = QComboBox()
         self.profile_combo.setMinimumWidth(260)
         self.profile_combo.currentIndexChanged.connect(self._profile_changed)
+        batch_btn = QPushButton("Check a folder…")
+        batch_btn.setToolTip("Check every script in a folder for this device, worst first, and save safe copies")
+        batch_btn.clicked.connect(self.show_batch)
         top.addWidget(open_btn)
+        top.addWidget(batch_btn)
         top.addWidget(self.file_label, 1)
         top.addWidget(QLabel("Device:"))
         top.addWidget(self.profile_combo)
@@ -549,6 +557,33 @@ class MainWindow(QMainWindow):
         self.advanced.show()
         self.advanced.raise_()
 
+    # --- batch ---------------------------------------------------------------------
+
+    def show_batch(self) -> BatchWindow:
+        if self.batch_window is None:
+            self.batch_window = BatchWindow(self.profile, self.options.options(), PROBLEM_NAMES, self)
+            self.batch_window.open_requested.connect(self._open_from_batch)
+        self._sync_batch()
+        self.batch_window.show()
+        self.batch_window.raise_()
+        return self.batch_window
+
+    def _open_from_batch(self, path: str) -> None:
+        if self.load_file(path):
+            self.raise_()
+            self.activateWindow()
+
+    def _sync_batch(self) -> None:
+        """Keep the batch window checking with the same device and fixes as the main window."""
+        if self.batch_window is None or not self.profiles:
+            return
+        try:
+            opts = self.options.options()
+            opts.validate()
+        except (ValueError, TypeError):
+            return
+        self.batch_window.set_settings(self.profile, opts)
+
     # --- profiles ------------------------------------------------------------
 
     def reload_profiles(self) -> None:
@@ -595,6 +630,7 @@ class MainWindow(QMainWindow):
         self.profile_label.setText(" · ".join(bits))
         self.profile_label.setToolTip(_tip(p.notes))
         self.fix_panel.set_profile(p)
+        self._sync_batch()
         self.schedule_recompute()
 
     # --- loading -------------------------------------------------------------
